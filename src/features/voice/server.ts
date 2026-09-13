@@ -40,7 +40,17 @@ function isAllowedOrigin(request: Request): boolean {
     return false;
   }
   try {
-    return new URL(origin).origin === new URL(request.url).origin;
+    const browserOrigin = new URL(origin).origin;
+    const requestUrl = new URL(request.url);
+    const host = request.headers.get("host");
+    const forwardedProtocol = request.headers
+      .get("x-forwarded-proto")
+      ?.split(",", 1)[0]
+      .trim();
+    const hostOrigin = host
+      ? `${forwardedProtocol || requestUrl.protocol.slice(0, -1)}://${host}`
+      : undefined;
+    return browserOrigin === requestUrl.origin || browserOrigin === hostOrigin;
   } catch {
     return false;
   }
