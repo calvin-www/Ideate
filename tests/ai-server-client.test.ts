@@ -188,15 +188,22 @@ describe("client AI review lifecycle", () => {
   });
 
   it.each(["code", "notes"] as const)("saves the exact %s range read beyond the initial source excerpt", async (tool) => {
-    useWorkspace.getState().setText(tool, "x".repeat(3_000) + "return target\n");
-    const provider = providerReadsThenNotes([{ name: `read_${tool}`, args: { from: 3_000, to: 3_014 } }], tool === "notes" ? 1 : 0);
+    useWorkspace.getState().setText(tool, "x".repeat(3_000) + "return target\nreturn target\n");
+    const provider = providerReadsThenNotes([
+      { name: `read_${tool}`, args: { from: 3_000, to: 3_014 } },
+      { name: `read_${tool}`, args: { from: 3_014, to: 3_028 } },
+      { name: `read_${tool}`, args: { from: 3_014, to: 3_028 } },
+    ], tool === "notes" ? 1 : 0);
     let pending: PendingChange | null = null;
     const collaborator = createCollaborator({ request: provider.request, runCode: async () => { throw new Error("unexpected run"); }, onPending: (value) => { pending = value; }, onError: () => {} });
     const asking = collaborator.ask("Read the requested section and link it in my notes.");
     await vi.waitFor(() => expect(pending).not.toBeNull());
     await collaborator.approve(); await asking;
-    const source = provider.results[0].source;
-    expect(source).toMatchObject({ tool, revision: 1, from: 3_000, to: 3_014, excerpt: "return target\n" });
+    expect(provider.results[0].source).toMatchObject({ tool, revision: 1, from: 3_000, to: 3_014, excerpt: "return target\n" });
+    const source = provider.results[1].source;
+    expect(source).toMatchObject({ tool, revision: 1, from: 3_014, to: 3_028, excerpt: "return target\n" });
+    expect(provider.results[0].source.id).not.toBe(source.id);
+    expect(provider.results[2].source.id).toBe(source.id);
     const data = useWorkspace.getState().data;
     expect(data.notes.text).toContain(`#source:${source.id}`);
     expect(data.references.find((ref) => ref.id === source.id)).toEqual(source);
@@ -205,8 +212,8 @@ describe("client AI review lifecycle", () => {
 
   it("keeps distinct board subset reads at one revision as distinct saved sources", async () => {
     useWorkspace.getState().setBoard([
-      { id: "left", type: "text", x: 0, y: 0, width: 100, height: 20, text: "First subset" },
-      { id: "right", type: "text", x: 200, y: 0, width: 100, height: 20, text: "Second subset" },
+      { id: "left", type: "text", x: 0, y: 0, width: 100, height: 20, text: "Shared label" },
+      { id: "right", type: "text", x: 200, y: 0, width: 100, height: 20, text: "Shared label" },
     ]);
     const provider = providerReadsThenNotes([{ name: "read_board", args: { ids: ["left"] } }, { name: "read_board", args: { ids: ["right"] } }]);
     let pending: PendingChange | null = null;
@@ -214,8 +221,8 @@ describe("client AI review lifecycle", () => {
     const asking = collaborator.ask("Read both diagram subsets and link the second one.");
     await vi.waitFor(() => expect(pending).not.toBeNull());
     await collaborator.approve(); await asking;
-    expect(provider.results[0].source).toMatchObject({ ids: ["left"], excerpt: "First subset", revision: 1 });
-    expect(provider.results[1].source).toMatchObject({ ids: ["right"], excerpt: "Second subset", revision: 1 });
+    expect(provider.results[0].source).toMatchObject({ ids: ["left"], excerpt: "Shared label", revision: 1 });
+    expect(provider.results[1].source).toMatchObject({ ids: ["right"], excerpt: "Shared label", revision: 1 });
     expect(provider.results[0].source.id).not.toBe(provider.results[1].source.id);
     const source = provider.results[1].source;
     const data = useWorkspace.getState().data;
@@ -243,6 +250,6 @@ describe("client AI review lifecycle", () => {
     const collaborator = createCollaborator({ request: provider.request, runCode: async () => { runs++; return { id: "actual-run", revision: 0, code: "print(1)", output: "1\n", status: "success", startedAt: 1, durationMs: 1 }; }, onPending: () => {}, onError: () => {} });
     await collaborator.ask(prompt);
     expect(runs).toBe(1);
-    expect(useWorkspace.getState().data.messages.at(-1)?.sources?.find((source) => source.runId === "actual-run")).toMatchObject({ revision: 0, excerpt: "1\n" });
+    expect(useWorkspace.getState().data.messages.at(-1)?.sources?.find((source) => source.runId === "actual-run")).toMatchObject({ revision: 0, excerpt: "1\n", from: 0, to: 2 });
   });
 });
