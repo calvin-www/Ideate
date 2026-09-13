@@ -1,0 +1,97 @@
+.scene {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 360px;
+  overflow: hidden;
+  isolation: isolate;
+  background: #ebece2;
+  border-radius: inherit;
+}
+
+.scene[data-active-object] canvas { cursor: pointer; }
+
+.objectLabel {
+  display: block;
+  min-width: 142px;
+  padding: 11px 15px 10px;
+  border: 1px solid rgba(246, 243, 226, 0.8);
+  border-radius: 5px;
+  background: rgba(248, 246, 234, 0.95);
+  box-shadow: 0 4px 12px #2d29161c;
+  color: #2d4638;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  transition: background 140ms ease, box-shadow 140ms ease;
+}
+
+.labelName {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  font: 500 16px/1.3 Georgia, "Times New Roman", serif;
+}
+
+.openIcon { color: #839279; font: 15px/1 system-ui, sans-serif; }
+.labelDetail { display: block; margin-top: 4px; font: 11px/1.4 system-ui, sans-serif; color: #6e7864; }
+.objectLabelActive, .objectLabel:hover { background: #fffef5; box-shadow: 0 0 0 2px #6f8b64, 0 5px 15px #2d291627; }
+.objectLabel:focus-visible { outline: 3px solid #31583e; outline-offset: 4px; }
+
+.deskHint {
+  position: absolute;
+  bottom: 19px;
+  left: 0;
+  right: 0;
+  margin: 0;
+  color: #7c8473;
+  text-align: center;
+  pointer-events: none;
+  font: 12px/1.5 system-ui, sans-serif;
+}
+
+.fallback { display: flex; align-items: center; min-height: 100%; padding: 48px 32px 70px; }
+.fallbackObjects { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; gap: 26px; width: 100%; max-width: 980px; margin: auto; }
+.fallbackObject { display: block; width: 100%; padding: 0; border: 0; background: transparent; text-align: left; color: #2d4638; cursor: pointer; }
+.fallbackObject:focus-visible { outline: 3px solid #31583e; outline-offset: 9px; border-radius: 5px; }
+.fallbackPreview { position: relative; display: flex; min-height: 160px; aspect-ratio: 1.35; flex-direction: column; overflow: hidden; padding: 18px; box-shadow: 0 10px 18px #33301b15; transition: box-shadow 160ms ease; }
+.fallbackObject:hover .fallbackPreview { box-shadow: 0 0 0 2px #7c926e, 0 12px 20px #33301b20; }
+.boardFallback .fallbackPreview { justify-content: center; background: #faf9f0; border: 8px solid #b6b198; border-radius: 5px; transform: rotate(-3deg); }
+.fallbackPreview img { width: 100%; height: 100%; object-fit: contain; }
+.arrayPreview { display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; }
+.arrayPreview > span { display: grid; place-items: center; height: 32px; border: 1px solid #879681; font: 15px Georgia, serif; }
+.arrayPreview > span:nth-child(5) { background: #d2dfc1; border-color: #5d7b51; }
+.codeFallback .fallbackPreview { gap: 13px; background: #142d28; color: #d4dec9; border: 8px solid #263e34; border-bottom-width: 17px; border-radius: 8px; }
+.fileName { font: 11px/1.4 ui-monospace, monospace; color: #d4dec9; }
+.codeFallback code { overflow: hidden; display: block; white-space: pre; font: 9px/1.8 ui-monospace, monospace; color: #d5c397; }
+.fallbackStatus { margin-top: auto; font: 9px/1.4 system-ui, sans-serif; color: #a7bb96; }
+.notesFallback .fallbackPreview { border-bottom: 6px solid #708157; border-right: 4px solid #708157; border-radius: 3px 8px 8px 3px; background: #f6efd9; transform: rotate(3deg); }
+.notesFallback .fallbackPreview::after { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: #d9cdb0; box-shadow: -3px 0 7px #63563715; }
+.paperHeading { font: italic 16px/1.5 Georgia, serif; color: #355343; max-height: 72px; overflow: hidden; }
+.paperLines { flex: 1; margin-top: 14px; background: repeating-linear-gradient(to bottom, transparent 0 20px, #dcd7c1 20px 21px); }
+.fallbackName { display: flex; justify-content: space-between; padding: 22px 1px 0; font: 21px/1.4 Georgia, serif; }
+.fallbackName > span { color: #839279; font: 19px/1.4 system-ui, sans-serif; }
+.fallbackDetail { display: block; margin-top: 5px; color: #707966; font: 12px/1.5 system-ui, sans-serif; }
+
+@media (max-width: 600px) {
+  .fallback { padding: 32px 24px 60px; }
+  .fallbackObjects { grid-template-columns: 1fr; gap: 28px; max-width: 340px; }
+  .fallbackObject { display: grid; grid-template-columns: 124px 1fr; column-gap: 24px; align-items: center; }
+  .fallbackPreview { grid-row: 1 / 3; width: 124px; min-height: 95px; height: 95px; aspect-ratio: auto; padding: 10px; }
+  .fallbackName { padding: 0; font-size: 20px; align-self: end; }
+  .fallbackDetail { align-self: start; margin-top: 6px; font-size: 11px; }
+  .arrayPreview { gap: 2px; }
+  .arrayPreview > span { font-size: 9px; height: 19px; }
+  .codeFallback .fallbackPreview { gap: 4px; border-width: 5px; border-bottom-width: 10px; }
+  .fileName { font-size: 9px; }
+  .codeFallback code { font-size: 6px; }
+  .fallbackStatus { display: none; }
+  .paperHeading { font-size: 11px; max-height: 36px; }
+  .deskHint { bottom: 18px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .objectLabel, .fallbackPreview { transition: none; }
+}
