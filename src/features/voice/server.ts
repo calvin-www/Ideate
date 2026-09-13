@@ -3,6 +3,7 @@ const SCRIBE_TOKEN_URL = `${ELEVENLABS_ORIGIN}/v1/single-use-token/realtime_scri
 const PCM_SAMPLE_RATE = 24_000;
 const DEFAULT_TIMEOUT_MS = 20_000;
 const DEFAULT_MAX_AUDIO_BYTES = 12 * 1024 * 1024;
+const DEFAULT_MAX_CONCURRENT_SPEECH = 4;
 const MAX_REQUEST_BYTES = 24 * 1024;
 const MAX_TOKEN_RESPONSE_BYTES = 8 * 1024;
 
@@ -19,7 +20,10 @@ export type VoiceServerDependencies = {
   config?: VoiceServerConfig;
   timeoutMs?: number;
   maxAudioBytes?: number;
+  maxConcurrentSpeech?: number;
 };
+
+let activeSpeechRequests = 0;
 
 type AbortLink = {
   controller: AbortController;
@@ -173,8 +177,8 @@ export async function handleVoiceSession(
     return jsonError(403, "Request origin is not allowed.");
   }
   const config = dependencies.config ?? environmentConfig();
-  if (!config.apiKey) {
-    return jsonError(503, "Voice service is not configured.");
+  if (!config.apiKey || !config.voiceId) {
+    return jsonError(503, "Add ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID to .env.local, then restart the server.");
   }
   const fetchImpl = dependencies.fetch ?? fetch;
   const link = linkAbort(request, dependencies.timeoutMs ?? DEFAULT_TIMEOUT_MS);
@@ -205,6 +209,7 @@ function boundedAudioStream(
   source: ReadableStream<Uint8Array>,
   maxBytes: number,
   link: AbortLink,
+  release: () => void,
 ): ReadableStream<Uint8Array> {
   const reader = source.getReader();
   let size = 0;
@@ -214,6 +219,7 @@ function boundedAudioStream(
         const { done, value } = await reader.read();
         if (done) {
           link.cleanup();
+          release();
           controller.close();
           return;
         }
@@ -222,18 +228,21 @@ function boundedAudioStream(
           link.controller.abort();
           await reader.cancel();
           link.cleanup();
+          release();
           controller.error(new Error("Audio response exceeded its limit"));
           return;
         }
         controller.enqueue(value);
       } catch {
         link.cleanup();
+        release();
         controller.error(new Error("Audio stream failed"));
       }
     },
     async cancel(reason) {
       link.controller.abort(reason);
       link.cleanup();
+      release();
       await reader.cancel(reason).catch(() => undefined);
     },
   });
@@ -248,10 +257,23 @@ export async function handleVoiceSpeech(
   }
   const config = dependencies.config ?? environmentConfig();
   if (!config.apiKey || !config.voiceId || !config.ttsModel) {
-    return jsonError(503, "Voice service is not configured.");
+    return jsonError(503, "Add ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID to .env.local, then restart the server.");
   }
   const input = await readSpeechText(request);
   if ("response" in input) return input.response;
+
+  const maxConcurrentSpeech =
+    dependencies.maxConcurrentSpeech ?? DEFAULT_MAX_CONCURRENT_SPEECH;
+  if (activeSpeechRequests >= maxConcurrentSpeech) {
+    return jsonError(429, "Too many voice requests. Try again shortly.");
+  }
+  activeSpeechRequests += 1;
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    activeSpeechRequests -= 1;
+  };
 
   const link = linkAbort(request, dependencies.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   const fetchImpl = dependencies.fetch ?? fetch;
@@ -268,6 +290,7 @@ export async function handleVoiceSpeech(
     });
     if (!response.ok || !response.body) {
       link.cleanup();
+      release();
       return response.ok
         ? jsonError(502, "Voice provider request failed.")
         : upstreamError(response);
@@ -277,10 +300,11 @@ export async function handleVoiceSpeech(
     if (Number.isFinite(declared) && declared > maxBytes) {
       link.controller.abort();
       link.cleanup();
+      release();
       await response.body.cancel().catch(() => undefined);
       return jsonError(502, "Voice provider response was too large.");
     }
-    return new Response(boundedAudioStream(response.body, maxBytes, link), {
+    return new Response(boundedAudioStream(response.body, maxBytes, link, release), {
       headers: {
         "cache-control": "no-store",
         "content-type": "audio/pcm",
@@ -289,6 +313,7 @@ export async function handleVoiceSpeech(
     });
   } catch {
     link.cleanup();
+    release();
     return mappedFetchError(request, link);
   }
 }

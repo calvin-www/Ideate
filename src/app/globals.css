@@ -71,6 +71,7 @@ svg {
   flex-shrink: 0;
 }
 .app-shell {
+  position: relative;
   height: 100dvh;
   min-height: 480px;
   display: flex;
@@ -90,6 +91,7 @@ svg {
   z-index: 15;
 }
 .brand {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 9px;
@@ -103,6 +105,7 @@ svg {
   color: #aaa272;
 }
 .tool-nav {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 3px;
@@ -133,8 +136,12 @@ svg {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-shrink: 0;
 }
 .save-status {
+  width: 143px;
+  flex: 0 0 143px;
+  white-space: nowrap;
   font-size: 11px;
   display: flex;
   align-items: center;
@@ -156,14 +163,8 @@ svg {
   background: var(--soft);
 }
 .partner-toggle {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   border: 1px solid #cbd6c4;
   border-radius: 8px;
-  padding: 10px 13px;
-  font-size: 12px;
-  font-weight: 550;
 }
 .partner-toggle.selected,
 .partner-toggle:hover {
@@ -290,38 +291,10 @@ svg {
   max-width: 150px;
   line-height: 1.6;
 }
-.tool-context {
-  height: 57px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  gap: 22px;
-  padding: 0 24px;
-  border-bottom: 1px solid var(--line);
-  background: #f6f7f0;
-}
-.back-button {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 11px;
-  color: #637760;
-}
-.workspace-title {
-  font-size: 11px;
-  color: #8c9587;
-  border-left: 1px solid var(--line);
-  padding-left: 22px;
-}
-.tool-subtitle {
-  margin-left: auto;
-  font-size: 11px;
-  color: #8b9484;
-}
 .editor-layout-controls {
-  margin-left: auto;
   flex-shrink: 0;
 }
+.editor-layout-controls[hidden] { display: none; }
 .tool-container {
   flex: 1;
   min-height: 0;
@@ -332,32 +305,6 @@ svg {
 .tool-container > div {
   flex: 1;
   min-height: 0;
-}
-.study-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 7px;
-  flex-wrap: wrap;
-  padding: 11px 20px;
-  background: #f9faf5;
-  border-top: 1px solid var(--line);
-  flex-shrink: 0;
-}
-.study-actions > span {
-  font-size: 10px;
-  color: #8a9482;
-  margin-right: 8px;
-}
-.study-actions button {
-  font-size: 11px;
-  padding: 6px 10px;
-  border-radius: 5px;
-  border: 1px solid #dfe5d8;
-  background: #fbfcf7;
-}
-.study-actions button:hover {
-  background: var(--soft);
 }
 .button {
   display: inline-flex;
@@ -493,7 +440,16 @@ svg {
   bottom: 0;
 }
 .storage-error {
+  position: absolute;
+  z-index: 30;
+  top: 82px;
+  right: 16px;
+  max-width: min(620px, calc(100% - 32px));
+  border: 1px solid #e8d6bd;
+  border-radius: 8px;
+  box-shadow: 0 6px 20px #243b3414;
   display: flex;
+  flex-wrap: wrap;
   gap: 16px;
   align-items: center;
   justify-content: center;
@@ -905,17 +861,19 @@ svg {
     gap: 5px;
   }
   .save-status span {
-    display: none;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
   }
+  .save-status { width: 18px; flex-basis: 18px; }
   .app-header {
     gap: 12px;
     padding: 0 20px;
   }
   .tool-nav button {
     padding: 9px 10px;
-  }
-  .partner-toggle span {
-    display: none;
   }
   .desk-intro h1 {
     font-size: 32px;
@@ -927,13 +885,7 @@ svg {
   .chat-panel {
     width: 340px;
   }
-  .tool-subtitle {
-    display: none;
-  }
   .editor-toolbar span {
-    display: none;
-  }
-  .study-actions > span {
     display: none;
   }
   .flat-desk {
@@ -965,6 +917,9 @@ svg {
   .header-actions > .icon-button {
     display: none;
   }
+  .editor-layout-controls button[aria-label="Editor layout"] { width: 31px; padding: 7px; }
+  .editor-layout-controls button[aria-label="Editor layout"] span { display: none; }
+  .storage-error { top: 71px; }
   .chat-panel {
     position: absolute;
     top: 65px;
@@ -990,18 +945,6 @@ svg {
   .desk-footer > span {
     max-width: 220px;
     line-height: 1.7;
-  }
-  .tool-context {
-    padding: 0 16px;
-    gap: 15px;
-  }
-  .study-actions {
-    padding: 8px 12px;
-    gap: 5px;
-  }
-  .study-actions button {
-    font-size: 10px;
-    padding: 6px 7px;
   }
   .flat-desk {
     padding: 160px 20px 20px;
@@ -1038,9 +981,6 @@ svg {
   }
   .desk-footer button {
     font-size: 10px;
-  }
-  .workspace-title {
-    display: none;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -1098,11 +1038,11 @@ svg {
 }
 @media (max-width: 480px) {
   .app-header {
-    padding: 0 10px;
-    gap: 6px;
+    padding: 0 8px;
+    gap: 5px;
   }
   .brand {
-    font-size: 22px;
+    font-size: 20px;
   }
   .brand svg {
     display: none;
@@ -1112,12 +1052,18 @@ svg {
     gap: 0;
   }
   .tool-nav button {
-    padding: 8px;
+    padding: 8px 6px;
   }
   .header-actions {
     gap: 3px;
   }
-  .partner-toggle {
-    padding: 9px;
-  }
+  .save-status { width: 13px; flex-basis: 13px; }
+}
+@media (max-width: 360px) {
+  .app-header { padding: 0 6px; gap: 3px; }
+  .brand > span { display: none; }
+  .brand svg { display: block; width: 22px; }
+  .tool-nav { padding: 2px; }
+  .tool-nav button { padding: 8px 4px; }
+  .header-actions { gap: 2px; }
 }

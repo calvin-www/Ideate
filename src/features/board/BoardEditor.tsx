@@ -19,6 +19,7 @@ import type { BoardElement } from "../workspace/model";
 import { sampleBoard } from "./adapter";
 import BoardAttention from "./BoardAttention";
 import BoardPresentation from "../voice/BoardPresentation";
+import { usePresentation } from "../voice/presentation";
 import {
   captureBoardFiles,
   checkImageReferences,
@@ -227,13 +228,18 @@ export default function BoardEditor({ active }: { active: boolean }) {
         </button>
         <button
           className="button quiet"
-          onClick={() =>
-            api?.scrollToContent(undefined, {
+          onClick={() => {
+            const preview = usePresentation.getState().current;
+            const elements = preview?.proposal.target === "board"
+              ? preview.finalElements ?? preview.elements
+              : undefined;
+            api?.scrollToContent(elements as unknown as ExcalidrawElement[] | undefined, {
               fitToViewport: true,
-              viewportZoomFactor: 0.75,
+              viewportZoomFactor: elements ? 0.6 : 0.75,
+              ...(elements ? { maxZoom: 1 } : {}),
               animate: false,
-            })
-          }
+            });
+          }}
         >
           Fit drawing
         </button>
@@ -438,7 +444,7 @@ export default function BoardEditor({ active }: { active: boolean }) {
           }}
         />
         {api && <BoardAttention api={api} active={active} />}
-        {api && active && <BoardPresentation api={api} />}
+        {api && <BoardPresentation api={api} active={active} container={root} />}
       </div>
     </div>
   );

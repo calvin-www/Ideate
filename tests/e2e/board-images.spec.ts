@@ -399,6 +399,7 @@ test("AI board previews include existing images and applying then undoing an edi
     .getByRole("button", { name: "Toggle study partner", exact: true })
     .click();
   const partner = page.getByRole("complementary", { name: "AI study partner" });
+  await partner.getByRole("switch", { name: "Auto-apply changes" }).uncheck();
   await partner
     .getByRole("textbox", { name: "Ask your study partner" })
     .fill("Label this screenshot.");

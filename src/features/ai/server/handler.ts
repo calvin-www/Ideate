@@ -8,7 +8,7 @@ import {
   newBudget,
   type GenerationLimits,
 } from "./budget";
-import { validateToolCall } from "./tools";
+import { toolNames, toolValidationIssues, validateToolCall } from "./tools";
 import {
   AiRequestError,
   MAX_CONTINUATION_BYTES,
@@ -32,6 +32,25 @@ type Dependencies = {
 };
 const continueInstruction =
   "Continue the unfinished answer exactly where it stopped. Do not repeat previous text or restart an open code block. Finish the current explanation concisely.";
+const repairInstruction =
+  "The previous proposed operation batch was rejected before execution. No operation in that batch was executed or approved. Correct the validation issues and return a small, complete operation using the declared tool schemas. Preserve exact revisions; read current data if needed. Do not claim a change was applied.";
+const knownTools = new Set<string>(toolNames);
+
+// Only replay envelopes that the browser can return in a continuation. A
+// malformed envelope is regenerated as a whole, never edited inside signed parts.
+function replayableCalls(calls: NonNullable<Part["functionCall"]>[]): boolean {
+  const ids = new Set<string>();
+  return calls.every((call) => {
+    if (!call || typeof call !== "object" || Array.isArray(call)) return false;
+    if (Object.keys(call).some((key) => !["id", "name", "args"].includes(key))) return false;
+    if (typeof call.name !== "string" || !knownTools.has(call.name)) return false;
+    if (call.id !== undefined) {
+      if (typeof call.id !== "string" || !call.id.length || call.id.length > 200 || ids.has(call.id)) return false;
+      ids.add(call.id);
+    }
+    return call.args === undefined || (call.args !== null && typeof call.args === "object" && !Array.isArray(call.args));
+  });
+}
 
 function checkContinuation(contents: Content[]) {
   if (
@@ -277,20 +296,63 @@ export async function handleAiRequest(
                 502,
                 "Gemini requested too many operations. Try a smaller step.",
               );
-            const validatedCalls = calls.map((call) => {
-              const args = validateToolCall(call.name ?? "", call.args ?? {});
-              if (!args)
+            const replayable = replayableCalls(calls);
+            const validated = replayable
+              ? calls.map((call) => validateToolCall(call.name!, call.args ?? {}))
+              : [];
+            if (!replayable || validated.some((args) => !args)) {
+              // No sibling call escapes a rejected batch, even if that sibling
+              // was valid. Retract only this attempt's visible explanation.
+              if (visibleText !== beforeAttempt)
+                emit({ type: "replace", text: beforeAttempt });
+              visibleText = beforeAttempt;
+              if (budget.remaining <= 0 || budget.recovered >= budget.recoveries)
                 throw new AiRequestError(
                   502,
-                  "Gemini proposed an invalid operation. No change was applied; please try again.",
+                  "Gemini could not produce a valid operation after correction. No change from this step was applied; try a smaller request.",
                 );
-              return {
-                type: "call",
-                id: call.id ?? randomUUID(),
-                name: call.name!,
-                args,
-              };
-            });
+              const feedback: Content = replayable
+                ? {
+                    role: "user",
+                    parts: [
+                      ...calls.map((call, index): Part => ({
+                        functionResponse: {
+                          ...(call.id ? { id: call.id } : {}),
+                          name: call.name,
+                          response: {
+                            output: validated[index]
+                              ? { status: "not_executed", message: "Another operation in this batch was invalid. No operation in this batch was executed." }
+                              : { status: "invalid_arguments", message: "No operation in this batch was executed.", issues: toolValidationIssues(call.name!, call.args ?? {}) },
+                          },
+                        },
+                      })),
+                      { text: repairInstruction },
+                    ],
+                  }
+                : {
+                    role: "user",
+                    parts: [{ text: `${repairInstruction} Use a declared tool name, object arguments, and distinct nonempty call IDs when supplying IDs.` }],
+                  };
+              const repaired: Content[] = [
+                ...contents,
+                ...(replayable ? [{ role: "model", parts } satisfies Content] : []),
+                feedback,
+              ];
+              checkContinuation(repaired);
+              contents = repaired;
+              budget.recovered++;
+              emit({ type: "status", message: "Correcting the proposed change…" });
+              await iterator?.return?.().catch(() => undefined);
+              iterator = undefined;
+              item = await openGeneration(true);
+              continue;
+            }
+            const validatedCalls = calls.map((call, index) => ({
+              type: "call",
+              id: call.id ?? randomUUID(),
+              name: call.name!,
+              args: validated[index]!,
+            }));
             const continued: Content[] = [
               ...contents,
               { role: "model", parts },

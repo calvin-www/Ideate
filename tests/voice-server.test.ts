@@ -5,6 +5,11 @@ import {
   MAX_SPEECH_TEXT_CHARS,
   type VoiceServerDependencies,
 } from "../src/features/voice/server";
+import {
+  closeAudio,
+  connectMicrophone,
+  speak,
+} from "../src/features/voice/transport";
 
 const origin = "http://localhost:3000";
 const configured = {
@@ -48,10 +53,25 @@ describe("voice server boundary", () => {
     expect(session.status).toBe(503);
     expect(speech.status).toBe(503);
     expect(await session.json()).toEqual({
-      error: "Voice service is not configured.",
+      error: "Add ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID to .env.local, then restart the server.",
     });
     expect(await speech.json()).toEqual({
-      error: "Voice service is not configured.",
+      error: "Add ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID to .env.local, then restart the server.",
+    });
+    expect(upstream).not.toHaveBeenCalled();
+  });
+
+  it("rejects session startup before issuing a token when the voice is missing", async () => {
+    const upstream = vi.fn<typeof fetch>();
+
+    const response = await handleVoiceSession(
+      post("/api/voice/session"),
+      deps(upstream, { ...configured, voiceId: "" }),
+    );
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      error: "Add ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID to .env.local, then restart the server.",
     });
     expect(upstream).not.toHaveBeenCalled();
   });
@@ -202,6 +222,30 @@ describe("voice server boundary", () => {
     expect(response.status).toBe(499);
   });
 
+  it("bounds concurrent speech generation until its stream is released", async () => {
+    const upstream = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response(new ReadableStream<Uint8Array>()));
+    const limited = {
+      ...deps(upstream),
+      maxConcurrentSpeech: 1,
+    };
+
+    const first = await handleVoiceSpeech(
+      post("/api/voice/speech", { text: "First" }),
+      limited,
+    );
+    const second = await handleVoiceSpeech(
+      post("/api/voice/speech", { text: "Second" }),
+      limited,
+    );
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(429);
+    expect(upstream).toHaveBeenCalledTimes(1);
+    await first.body?.cancel();
+  });
+
   it.each([
     [
       "session",
@@ -230,5 +274,229 @@ describe("voice server boundary", () => {
     expect(JSON.parse(body)).toEqual({ error });
     expect(body).not.toContain("server-secret-key");
     expect(body).not.toContain("ElevenLabs");
+  });
+});
+
+class FakeSource {
+  buffer: AudioBuffer | null = null;
+  onended: (() => void) | null = null;
+  start = vi.fn();
+  stop = vi.fn();
+  connect = vi.fn();
+  disconnect = vi.fn();
+}
+
+class FakePort {
+  onmessage: ((event: MessageEvent<CaptureMessage>) => void) | null = null;
+  postMessage = vi.fn();
+  close = vi.fn();
+}
+
+type CaptureMessage = {
+  type: "audio";
+  pcm: ArrayBuffer;
+  rms: number;
+  durationMs: number;
+};
+
+function installAudioBrowser() {
+  const sources: FakeSource[] = [];
+  const track = { stop: vi.fn() };
+  class FakeNode {
+    port = new FakePort();
+    gain = { value: 1 };
+    connect(target: unknown) {
+      return target;
+    }
+    disconnect() {}
+  }
+  class FakeContext {
+    currentTime = 0;
+    destination = {};
+    sampleRate = 48_000;
+    state: AudioContextState = "running";
+    audioWorklet = { addModule: vi.fn().mockResolvedValue(undefined) };
+    createBuffer(_channels: number, length: number, rate: number) {
+      const samples = new Float32Array(length);
+      return {
+        duration: length / rate,
+        getChannelData: () => samples,
+      };
+    }
+    createBufferSource() {
+      const source = new FakeSource();
+      sources.push(source);
+      return source;
+    }
+    createMediaStreamSource() {
+      return new FakeNode();
+    }
+    createGain() {
+      return new FakeNode();
+    }
+    resume = vi.fn().mockResolvedValue(undefined);
+    close = vi.fn().mockImplementation(async () => {
+      this.state = "closed";
+    });
+  }
+  vi.stubGlobal("window", globalThis);
+  vi.stubGlobal("AudioContext", FakeContext);
+  vi.stubGlobal("AudioWorkletNode", FakeNode);
+  vi.stubGlobal("navigator", {
+    mediaDevices: {
+      getUserMedia: vi.fn().mockResolvedValue({ getTracks: () => [track] }),
+    },
+  });
+  return { sources, track };
+}
+
+class FakeWebSocket {
+  static readonly CONNECTING = 0;
+  static readonly OPEN = 1;
+  static readonly CLOSING = 2;
+  static readonly CLOSED = 3;
+  readyState = FakeWebSocket.CONNECTING;
+  onmessage: ((event: MessageEvent) => void) | null = null;
+  onclose: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  private listeners = new Map<string, Set<() => void>>();
+
+  constructor(_url: URL) {
+    queueMicrotask(() => {
+      if (this.readyState !== FakeWebSocket.CONNECTING) return;
+      this.readyState = FakeWebSocket.OPEN;
+      this.emit("open");
+    });
+  }
+
+  addEventListener(type: string, listener: () => void) {
+    const listeners = this.listeners.get(type) ?? new Set();
+    listeners.add(listener);
+    this.listeners.set(type, listeners);
+  }
+
+  removeEventListener(type: string, listener: () => void) {
+    this.listeners.get(type)?.delete(listener);
+  }
+
+  send(_value: string) {}
+
+  close() {
+    if (this.readyState === FakeWebSocket.CLOSED) return;
+    this.readyState = FakeWebSocket.CLOSED;
+    this.emit("close");
+    this.onclose?.();
+  }
+
+  private emit(type: string) {
+    for (const listener of this.listeners.get(type) ?? []) listener();
+  }
+}
+
+describe("voice browser transport", () => {
+  it("settles promptly on abort even when stopped sources never emit ended", async () => {
+    const { sources } = installAudioBrowser();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(new Uint8Array([0, 0, 1, 0]), {
+          headers: { "x-audio-sample-rate": "24000" },
+        }),
+      ),
+    );
+    const controller = new AbortController();
+    let started!: () => void;
+    const playbackStarted = new Promise<void>((resolve) => (started = resolve));
+    const pending = speak("Hello", controller.signal, started);
+    await playbackStarted;
+
+    controller.abort();
+
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    expect(sources[0].stop).toHaveBeenCalled();
+    await closeAudio();
+    vi.unstubAllGlobals();
+  });
+
+  it("aborts the upstream request when reading its PCM stream fails", async () => {
+    const { sources } = installAudioBrowser();
+    let upstreamAborted = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockImplementation((_url, init) => {
+        init?.signal?.addEventListener("abort", () => {
+          upstreamAborted = true;
+        });
+        let pulled = false;
+        return Promise.resolve(
+          new Response(
+            new ReadableStream<Uint8Array>({
+              pull(controller) {
+                if (!pulled) {
+                  pulled = true;
+                  controller.enqueue(new Uint8Array([0, 0]));
+                } else {
+                  controller.error(new Error("broken PCM stream"));
+                }
+              },
+            }),
+            { headers: { "x-audio-sample-rate": "24000" } },
+          ),
+        );
+      }),
+    );
+
+    await expect(
+      speak("Hello", new AbortController().signal, () => undefined),
+    ).rejects.toThrow("broken PCM stream");
+    expect(upstreamAborted).toBe(true);
+    expect(sources[0].stop).toHaveBeenCalled();
+    await closeAudio();
+    vi.unstubAllGlobals();
+  });
+
+  it("does not fail the microphone when muting an in-flight unmute", async () => {
+    const { track } = installAudioBrowser();
+    vi.stubGlobal("WebSocket", FakeWebSocket);
+    let tokenRequest = 0;
+    let replacementAborted = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockImplementation((_url, init) => {
+        tokenRequest += 1;
+        if (tokenRequest === 1) {
+          return Promise.resolve(Response.json({ token: "sutkn_first" }));
+        }
+        return new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => {
+            replacementAborted = true;
+            reject(new DOMException("cancelled", "AbortError"));
+          });
+        });
+      }),
+    );
+    const errors: string[] = [];
+    const microphone = await connectMicrophone(
+      {
+        onSpeechStart: () => undefined,
+        onPartial: () => undefined,
+        onUtterance: () => undefined,
+        onError: (message) => errors.push(message),
+      },
+      new AbortController().signal,
+    );
+
+    microphone.mute(true);
+    microphone.mute(false);
+    microphone.mute(true);
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(replacementAborted).toBe(true);
+    expect(errors).toEqual([]);
+    expect(track.stop).not.toHaveBeenCalled();
+    microphone.close();
+    expect(track.stop).toHaveBeenCalledOnce();
+    vi.unstubAllGlobals();
   });
 });

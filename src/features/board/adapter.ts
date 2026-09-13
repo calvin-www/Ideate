@@ -26,6 +26,11 @@ function dimension(value: unknown): number {
     throw new Error("Invalid diagram dimensions.");
   return value;
 }
+function arrowDisplacement(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || Math.abs(value) > 10_000)
+    throw new Error("Invalid arrow displacement.");
+  return value;
+}
 function textValue(value: unknown): string {
   if (typeof value !== "string" || value.length > 2_000)
     throw new Error("Invalid diagram text.");
@@ -398,16 +403,18 @@ export async function buildBoardPatch(
       throw new Error("Unsupported diagram element.");
     const x = position(item.x),
       y = position(item.y),
-      width = dimension(item.width),
-      height = dimension(item.height);
+      width = item.type === "arrow" ? arrowDisplacement(item.width) : dimension(item.width),
+      height = item.type === "arrow" ? arrowDisplacement(item.height) : dimension(item.height);
+    if (item.type === "arrow" && width === 0 && height === 0)
+      throw new Error("An arrow must have distinct start and end points.");
     const text = item.text === undefined ? undefined : textValue(item.text);
     const base = {
       id,
       type: item.type,
       x,
       y,
-      width,
-      height,
+      width: Math.abs(width),
+      height: Math.abs(height),
       strokeColor: "#355b46",
       backgroundColor:
         item.type === "text" || item.type === "arrow"

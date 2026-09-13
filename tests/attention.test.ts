@@ -8,6 +8,7 @@ beforeEach(() => {
   useWorkspace.setState({
     data: createWorkspace(),
     view: "code",
+    visibleTools: ["code"],
     selection: null,
     jobId: null,
   });
@@ -56,6 +57,15 @@ function provider(name: string, args: Record<string, unknown>) {
   return { collaborator, results, pending };
 }
 
+it("does not report a source cue as visible when only its output is focused", async () => {
+  useWorkspace.setState({ view: "code", visibleTools: [] });
+  const fixture = provider("show_attention", codeCue);
+  await fixture.collaborator.ask("Point out the search bounds");
+  expect(fixture.results).toEqual([
+    expect.objectContaining({ status: "shown", visible: false }),
+  ]);
+});
+
 it("validates semantic targets and rejects malformed or empty highlights", () => {
   expect(validateToolCall("show_attention", codeCue)).toEqual(codeCue);
   expect(
@@ -94,7 +104,7 @@ it("shows a cue without changing documents, selection, navigation, or staging an
     to: 3,
     text: before.notes.text.slice(0, 3),
   };
-  useWorkspace.setState({ selection, view: "notes" });
+  useWorkspace.setState({ selection, view: "notes", visibleTools: ["notes"] });
   const fixture = provider("show_attention", codeCue);
   await fixture.collaborator.ask("Point out the search bounds");
   expect(fixture.results).toEqual([

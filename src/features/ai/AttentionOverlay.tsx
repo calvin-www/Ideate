@@ -42,7 +42,20 @@ export default function AttentionOverlay({
       frame = requestAnimationFrame(() => {
         const bounds = root.current?.getBoundingClientRect();
         if (!bounds?.width || !bounds.height) return;
-        const rects = measure()
+        const measured = measure();
+        // Text fragments belong to one passage; board elements remain separate targets.
+        const targets =
+          cue.target !== "board" && cue.mode === "highlight" && measured.length > 1
+            ? [
+                measured.reduce((passage, rect) => ({
+                  left: Math.min(passage.left, rect.left),
+                  top: Math.min(passage.top, rect.top),
+                  right: Math.max(passage.right, rect.right),
+                  bottom: Math.max(passage.bottom, rect.bottom),
+                })),
+              ]
+            : measured;
+        const rects = targets
           .filter(
             (r) =>
               r.right >= bounds.left &&

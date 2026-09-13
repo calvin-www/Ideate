@@ -98,6 +98,21 @@ async function connectedScene() {
 }
 
 describe("real Excalidraw board adapter", () => {
+  it("preserves leftward, upward, and straight connector directions", async () => {
+    for (const [dx, dy] of [[0, 100], [100, 0], [-80, 100], [80, -100]]) {
+      const result = await patch([], { additions: [{ type: "arrow", x: 450, y: 295, width: dx, height: dy }] });
+      const arrow = result.find((element) => element.type === "arrow")!;
+      const points = arrow.points as number[][];
+      // Native Excalidraw conversion insets endpoints by a half stroke width.
+      for (const [actual, expected] of [[points.at(-1)![0] - points[0][0], dx], [points.at(-1)![1] - points[0][1], dy]]) {
+        expect(Math.sign(actual)).toBe(Math.sign(expected));
+        expect(Math.abs(actual - expected)).toBeLessThanOrEqual(1.5);
+      }
+      expect(Number(arrow.width)).toBeGreaterThanOrEqual(0);
+      expect(Number(arrow.height)).toBeGreaterThanOrEqual(0);
+    }
+    await expect(patch([], { additions: [{ type: "arrow", x: 0, y: 0, width: 0, height: 0 }] })).rejects.toThrow();
+  });
   it("creates an editable pen stroke with derived geometry and preserves existing work", async () => {
     const existing = await patch([], { additions: [shape] });
     const result = await patch(existing, {

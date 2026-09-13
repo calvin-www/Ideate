@@ -31,7 +31,7 @@ export type VoiceHooks = {
   enabled: () => boolean;
   context: () => Record<string, unknown>;
   play: (speech: string, signal: AbortSignal, change?: PendingChange, action?: () => Promise<unknown>) => Promise<void>;
-  clear?: () => void;
+  clear?: (jobId?: string) => void;
 };
 type Options = {
   voice?: VoiceHooks;
@@ -62,6 +62,23 @@ type Job = {
   ownedRunId?: string;
 };
 class CollaborationError extends Error {}
+
+function* spokenParts(text: string) {
+  for (let start = 0; start < text.length;) {
+    let end = Math.min(text.length, start + 1200);
+    if (end < text.length) {
+      const section = text.slice(start, end);
+      const sentence = [...section.matchAll(/[.!?]\s+/g)].at(-1);
+      if (sentence) end = start + sentence.index + sentence[0].length;
+      else {
+        const space = section.lastIndexOf(" ");
+        if (space > 0) end = start + space + 1;
+      }
+    }
+    yield text.slice(start, end);
+    start = end;
+  }
+}
 
 function endpointError(value: unknown, fallback: string): string {
   // /api/ai emits controlled, sanitized errors. Keep their actionable reason;
@@ -596,7 +613,7 @@ export function createCollaborator(options: Options) {
         result = {
           status: "shown",
           target: cue.target,
-          visible: state.view !== "desk" && (state.view === cue.target || state.visibleTools.includes(cue.target)),
+          visible: state.view !== "desk" && state.visibleTools.includes(cue.target),
           message:
             "Cue set without editing. If the target domain is hidden, the student can use Show in chat.",
         };
@@ -663,7 +680,8 @@ export function createCollaborator(options: Options) {
       call.name.startsWith("edit_") ||
       call.name === "link_artifacts"
     ) {
-      result = await stage(job, call);
+      if (job.voice) job.taught = true;
+      result = await stage(job, call, job.voice ? String(args.summary) : undefined);
     } else if (call.name === "run_python") {
       result = explicitlyRequestsExecution(job.prompt)
         ? await executeRun(job, Number(args.revision))
@@ -932,7 +950,6 @@ export function createCollaborator(options: Options) {
       attention: {},
       jobId: job.id,
       activity: "Reading your workspace…",
-      chatOpen: true,
     });
     initial.setData((data) => ({
       ...data,
@@ -998,7 +1015,12 @@ export function createCollaborator(options: Options) {
         if (response.calls.length === 0) {
           if (job.voice && !job.taught && options.voice) {
             const answer = useWorkspace.getState().data.messages.find((message) => message.id === job.assistantId)?.text;
-            if (answer?.trim()) await options.voice.play(answer.slice(0, 1200), job.controller.signal);
+            if (answer?.trim()) {
+              for (const part of spokenParts(answer)) {
+                assertActive(job);
+                if (part.trim()) await options.voice.play(part, job.controller.signal);
+              }
+            }
           }
           break;
         }
@@ -1040,7 +1062,7 @@ export function createCollaborator(options: Options) {
         }));
       }
     } finally {
-      if (active === job) options.voice?.clear?.();
+      if (active === job) options.voice?.clear?.(job.id);
       if (active === job) {
         if (useWorkspace.getState().jobId === job.id)
           useWorkspace.setState({ jobId: null, activity: "" });
@@ -1097,7 +1119,7 @@ export function createCollaborator(options: Options) {
         try {
           await options.voice.play(review.speech, job.controller.signal, review);
         } catch (error) {
-          review.resolve({ status: "cancelled", message: "Speech or writing was interrupted. This step was not applied." });
+          review.resolve({ status: "cancelled", message: "The teaching step was interrupted. Visible progress may have been saved; read the current workspace before continuing." });
           if (isActive(job)) {
             options.onError(error instanceof Error && error.name !== "AbortError" ? error.message : "Writing paused. Completed changes are saved.");
             cancel();
@@ -1114,8 +1136,8 @@ export function createCollaborator(options: Options) {
           state.jobId,
           Array.isArray(review.preview) ? review.preview : undefined,
         );
+        options.voice?.clear?.(job.id);
         state.setData(() => next);
-        options.voice?.clear?.();
         const revision = next[review.proposal.target].revision;
         if (job.sourceRevisions[review.proposal.target] !== undefined)
           job.sourceRevisions[review.proposal.target] = revision;
@@ -1132,7 +1154,7 @@ export function createCollaborator(options: Options) {
         });
       }
     } catch {
-      options.voice?.clear?.();
+      options.voice?.clear?.(job.id);
       if (isActive(job))
         options.onError(
           "The document or source context changed. Your manual edits were preserved; ask for a fresh proposal.",
@@ -1224,7 +1246,7 @@ export function useCollaborator(
         enabled: () => voiceRef.current?.enabled() ?? false,
         context: () => voiceRef.current?.context() ?? {},
         play: (...args) => voiceRef.current?.play(...args) ?? Promise.resolve(),
-        clear: () => voiceRef.current?.clear?.(),
+        clear: (jobId) => voiceRef.current?.clear?.(jobId),
       },
       runCode: () => execution.current.runCode(),
       stopCode: () => execution.current.stopCode?.(),

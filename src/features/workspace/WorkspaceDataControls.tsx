@@ -70,7 +70,7 @@ export default function WorkspaceDataControls({
             <h3>Clear {labels[scope]}?</h3>
             <p>
               {scope === "all"
-                ? "This removes the whiteboard, Python, notes, chat, saved runs, source excerpts, and undo history from this workspace. Auto-apply switches off."
+                ? "This removes the whiteboard, Python, notes, chat, saved runs, source excerpts, and undo history from this workspace. Auto-apply returns to its default: on."
                 : `This empties your ${labels[scope]} and removes its undo history${scope === "code" ? " and saved Python runs" : ""}. Other documents, chat, and their saved source excerpts stay.`}
             </p>
             <p>

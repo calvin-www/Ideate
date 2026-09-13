@@ -9,16 +9,40 @@
   color: #26382f;
 }
 @container (max-width: 540px) {
-  .panel .toolbar { padding: 0 12px; gap: 8px; }
-  .panel .toolbarActions { gap: 6px; }
-  .panel .runtime { display: none; }
-  .panel .filename { gap: 5px; font-size: 11px; }
+  .panel .toolbar {
+    padding: 0 12px;
+    gap: 8px;
+  }
+  .panel .toolbarActions {
+    gap: 6px;
+  }
+  .panel .runtime {
+    display: none;
+  }
+  .panel .filename {
+    gap: 5px;
+    font-size: 11px;
+  }
 }
 @container (max-width: 420px) {
-  .panel .toolbar { padding: 0 8px; gap: 6px; }
-  .panel .toolbarActions { gap: 4px; }
-  .panel .filename > svg, .panel .iconButton { display: none; }
-  .panel .runButton, .panel .stopButton, .panel .toolbarActions :global(.button) { padding: 7px 9px; font-size: 11px; gap: 4px; }
+  .panel .toolbar {
+    padding: 0 8px;
+    gap: 6px;
+  }
+  .panel .toolbarActions {
+    gap: 4px;
+  }
+  .panel .filename > svg,
+  .panel .iconButton {
+    display: none;
+  }
+  .panel .runButton,
+  .panel .stopButton,
+  .panel .toolbarActions :global(.button) {
+    padding: 7px 9px;
+    font-size: 11px;
+    gap: 4px;
+  }
 }
 .panel[hidden] {
   display: none;
@@ -165,13 +189,72 @@
 .divider:focus-visible {
   background: #e5ecd9;
 }
-.outputPanel {
-  display: flex;
+.outputSlot {
   flex: 0 1 auto;
-  flex-direction: column;
   min-height: 110px;
   max-height: 70%;
+}
+.outputPanel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
   background: #f5f7ef;
+}
+.outputActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.outputMenu {
+  position: fixed;
+  left: auto;
+  bottom: auto;
+  margin: 0;
+  width: 220px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 24px);
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid #d5dfcb;
+  border-radius: 8px;
+  background: #fbfcf7;
+  color: #354b2f;
+  box-shadow: 0 12px 40px #213b2926;
+  font-size: 11px;
+}
+.outputMenu::backdrop {
+  background: transparent;
+}
+.outputMenu strong {
+  display: block;
+  padding: 4px 5px 9px;
+  font-size: 12px;
+}
+.outputMenu p {
+  color: #7c8a71;
+  line-height: 1.6;
+}
+.outputMenu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 5px;
+  text-align: left;
+  border-radius: 4px;
+}
+.outputMenu button:hover {
+  background: #edf2e5;
+}
+.outputMenu button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.outputMenu button:focus-visible {
+  outline: 2px solid #537749;
+  outline-offset: 1px;
 }
 .outputToolbar {
   display: flex;

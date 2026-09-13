@@ -2,7 +2,7 @@
 
 > Execute the approved design in this session. Use test-first integration coverage and a code review before completion.
 
-**Goal:** Add optional split, tabbed, floating, and maximized editors while retaining the current default.
+**Goal:** Add optional split, tabbed, floating, and maximized editors while retaining the current default. Each header page remembers its own arrangement and restores it when revisited.
 
 **Architecture:** Dockview owns layout shells. Persistent React portal containers own editors independently of those shells. A layout controller handles mode changes, restoration, and visibility; the workspace store retains content, focus, and execution ownership.
 
@@ -13,6 +13,7 @@
 ## Global constraints
 
 - Default single-editor appearance and Study Partner sidebar are preserved.
+- Header page ownership is separate from panel focus. Single editor and Reset affect only the selected page.
 - One live instance of each editor; layout transitions preserve editor history and running code.
 - Native browser popouts are excluded from this version.
 - Respect existing uncommitted changes; do not stage unrelated work.
@@ -41,11 +42,21 @@
 - [x] Request a focused code review of new layout files and touched integration points; fix substantive findings.
 - [x] Record usage in README and report verified behavior plus any remaining limitations.
 
-## Verification results
+## Initial verification results
 
 - Full unit suite: 22 files, 187 tests passed.
 - Layout browser suite: 7 tests passed. After adding the narrow-window navigation regression and its fix, both navigation tests passed again.
 - Existing workspace, attention, and board-image browser suites: 17 tests passed.
 - Typecheck and production build passed. A subsequent typecheck encountered a newly added, unrelated `tests/voice-progression.test.ts` import of the missing `src/features/voice/progression` module; that concurrent work was left untouched.
 - Focused code and browser review findings were addressed, including floating docking, restoring saved contents and geometry, compact controls, board keyboard focus, and theme selectors.
-- Header navigation always selects one full-size editor, including after a narrow window is widened. Saved arrangements require explicit restoration. Native browser popouts remain outside this version.
+- Native browser popouts remain outside this version.
+
+## Per-page layout follow-up
+
+- Store separate browser preferences for Whiteboard, Computer, and Journal; migrate the legacy global preference to its first editor's page.
+- Capture splits, tab selections, floating bounds, and detached Output before navigation. Restore each page automatically, including after reload, while keeping editor instances mounted.
+- Preserve the selected panel when returning from Desk or clicking the current header page. Single editor and Reset return to that page's default editor.
+- Explicit Show actions reveal the requested editor even when its saved layout has another tab selected; ordinary header navigation preserves that selection.
+- Confirmed failing regressions before fixing lost split arrangements, Desk return changing the active panel, Reset displaying another page's editor, and Show leaving Python hidden.
+- Focused code review and isolated browser follow-ups found no remaining blockers.
+- Final verification: 23 layout/output/attention browser tests and 36 targeted unit tests passed. The existing five workspace browser tests, typecheck, and production build also passed.

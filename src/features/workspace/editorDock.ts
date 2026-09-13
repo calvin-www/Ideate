@@ -3,16 +3,24 @@ import type {
   IDockviewPanel,
   SerializedDockview,
 } from "dockview-react";
-import type { Tool } from "./model";
-import { isTool, toolTitles } from "./layoutPersistence";
+import {
+  isEditorPanel,
+  panelTitles,
+  type EditorPanel,
+} from "./layoutPersistence";
 
-export type Placement = "right" | "below" | "within" | "float";
-export type OpenEditor = { tool: Tool; placement: Placement; reference: Tool };
+export type Placement =
+  "left" | "right" | "above" | "below" | "within" | "float";
+export type OpenEditor = {
+  tool: EditorPanel;
+  placement: Placement;
+  reference: EditorPanel;
+};
 export type DockState = {
   layout: SerializedDockview;
-  visible: Tool[];
-  opened: Tool[];
-  focused?: Tool;
+  visible: EditorPanel[];
+  opened: EditorPanel[];
+  focused?: EditorPanel;
   maximized: boolean;
 };
 
@@ -54,17 +62,17 @@ export class EditorDock {
     }
   }
   private add(
-    tool: Tool,
+    tool: EditorPanel,
     reference?: IDockviewPanel,
-    direction: "right" | "below" | "within" = "right",
+    direction: Exclude<Placement, "float"> = "right",
   ) {
     return this.api.addPanel({
       id: tool,
       component: "editor",
-      title: toolTitles[tool],
+      title: panelTitles[tool],
       renderer: "always",
       minimumWidth: 280,
-      minimumHeight: 220,
+      minimumHeight: tool === "output" ? 140 : 220,
       ...(reference
         ? { position: { referencePanel: reference, direction } }
         : {}),
@@ -72,7 +80,7 @@ export class EditorDock {
   }
   initialize(
     layout: SerializedDockview | null,
-    tool: Tool,
+    tool: EditorPanel,
     start?: OpenEditor,
   ) {
     this.transaction(() => {
@@ -105,14 +113,14 @@ export class EditorDock {
       visible: panels
         .filter((panel) => panel.api.isVisible)
         .map((panel) => panel.id)
-        .filter(isTool),
-      opened: panels.map((panel) => panel.id).filter(isTool),
-      focused: isTool(focused) ? focused : undefined,
+        .filter(isEditorPanel),
+      opened: Object.keys(this.capture().panels).filter(isEditorPanel),
+      focused: isEditorPanel(focused) ? focused : undefined,
       maximized: this.maximized,
     });
     window.dispatchEvent(new Event("ideate:editor-layout"));
   }
-  focus(tool: Tool) {
+  focus(tool: EditorPanel) {
     if (this.maximized && !this.api.getPanel(tool)) this.restore();
     const panel =
       this.api.getPanel(tool) ?? this.add(tool, this.api.activePanel);
@@ -122,7 +130,11 @@ export class EditorDock {
   open({ tool, placement, reference }: OpenEditor) {
     this.transaction(() => {
       if (this.restorePoint) this.restore();
-      const anchor = this.api.getPanel(reference) ?? this.api.activePanel;
+      const anchor =
+        this.api.getPanel(reference) ??
+        (tool === "output" && reference === "code" && placement !== "float"
+          ? this.add("code", this.api.activePanel)
+          : this.api.activePanel);
       let panel = this.api.getPanel(tool);
       if (!panel)
         panel = this.add(
@@ -136,9 +148,11 @@ export class EditorDock {
           position:
             placement === "below"
               ? "bottom"
-              : placement === "within"
-                ? "center"
-                : "right",
+              : placement === "above"
+                ? "top"
+                : placement === "within"
+                  ? "center"
+                  : placement,
         });
       if (placement === "float") this.floatPanel(panel);
       panel.api.setActive();
@@ -154,14 +168,14 @@ export class EditorDock {
       y: 28,
     });
   }
-  float(tool: Tool) {
+  float(tool: EditorPanel) {
     this.transaction(() => {
       if (this.restorePoint) this.restore();
       const panel = this.api.getPanel(tool);
       if (panel) this.floatPanel(panel);
     });
   }
-  dock(tool: Tool) {
+  dock(tool: EditorPanel) {
     this.transaction(() => {
       const panel = this.api.getPanel(tool);
       if (panel) {
@@ -174,7 +188,7 @@ export class EditorDock {
       }
     });
   }
-  maximize(tool: Tool) {
+  maximize(tool: EditorPanel) {
     if (this.restorePoint) return;
     this.transaction(() => {
       this.restorePoint = this.api.toJSON();
@@ -188,13 +202,14 @@ export class EditorDock {
     this.restorePoint = null;
     this.transaction(() => this.api.fromJSON(previous));
   }
-  hide(tool: Tool) {
+  hide(tool: EditorPanel) {
     this.transaction(() => {
       if (this.restorePoint) this.restore();
       this.api.getPanel(tool)?.api.close();
+      if (tool === "output") this.focus("code");
     });
   }
-  resize(tool: Tool, axis: "width" | "height", delta: number) {
+  resize(tool: EditorPanel, axis: "width" | "height", delta: number) {
     const panel = this.api.getPanel(tool);
     if (panel)
       panel.api.group.api.setSize({

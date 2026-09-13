@@ -17,6 +17,7 @@ import { useWorkspace } from "../workspace/store";
 import styles from "./NotePanel.module.css";
 import AttentionOverlay from "../ai/AttentionOverlay";
 import { attentionPreview } from "./attentionPreview";
+import TextPresentation from "../voice/TextPresentation";
 
 export interface NotePanelProps {
   active: boolean;
@@ -258,6 +259,7 @@ export default function NotePanel({ active, onReference }: NotePanelProps) {
         hidden={mode !== "preview"}
         inert={mode !== "preview"}
       >
+        {active && mode === "preview" && <TextPresentation target="notes" />}
         <div
           ref={preview}
           className={styles.preview}

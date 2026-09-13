@@ -5,5 +5,9 @@
 .text :global(.cm-content) { padding: 22px 0; font-family: 'Cascadia Code', 'SFMono-Regular', Consolas, monospace; }
 .text :global(.cm-line) { padding: 0 22px; line-height: 1.8; }
 .text :global(.cm-gutters) { background: #f2f3ed; color: #8a938c; border: none; padding: 0 5px; }
+.text :global(.cm-activeLine) { background: #edf1e7; }
+.text :global(.cm-activeLine)::after { content: ' ▏'; color: #527b50; }
 .label { position: absolute; z-index: 1; right: 12px; top: 8px; padding: 4px 8px; border-radius: 6px; background: #e6eddf; color: #355b46; font-size: 11px; }
 .board svg { display: block; }
+.board { z-index: 3; cursor: default; pointer-events: none; }
+.boardTakeover { top: 66px; border: 1px solid #bfd1b5; cursor: pointer; pointer-events: auto; }

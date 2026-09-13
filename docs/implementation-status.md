@@ -1,6 +1,6 @@
 # Implementation status
 
-Updated September 12, 2026. The user explicitly authorized implementation after approving the product plan, then authorized subagents. This is a fresh local implementation; the earlier repository remains a design reference. Nothing has been deployed.
+Updated September 13, 2026. The user explicitly authorized implementation after approving the product plan, then authorized subagents. This is a fresh local implementation; the earlier repository remains a design reference. Nothing has been deployed.
 
 ## Delivered
 
@@ -10,7 +10,7 @@ Updated September 12, 2026. The user explicitly authorized implementation after 
 - **Journal:** Markdown editing and rendered preview with tables, lists, code blocks, LaTeX math, download, and saved source links. Chat shares the math renderer. Dollar and LaTeX parenthesis/bracket delimiters preserve source positions; code spans stay literal. Raw HTML does not execute.
 - **Shared Gemini collaborator:** Immutable workspace/selection context, bounded reads, optional board image, streamed responses, text diffs, board previews, Apply/Reject, Apply & run, cancellation, revision checks, and undo. Conflicting undo shows the replaced content and requires an explicit restore; the restore is itself undoable.
 - **Persistence:** Browser-owned workspace in IndexedDB, serialized saves, schema checks before save/load, validated and normalized import, JSON export, and preserved historical run/source excerpts. Invalid saved data is retained for recovery instead of being overwritten by defaults.
-- **Study controls:** Remembered auto-apply preference (off by default), using the same validation and undo path as reviewed changes. Clear chat cancels active work and deletes persisted messages. A global clear-data dialog provides separate board/code/notes clears and a full reset with a table-flip animation, confirmation, export access, keyboard handling, and reduced-motion support. Cleared domains discard their undo stacks; a full reset removes artifacts and history and disables auto-apply.
+- **Study controls:** Remembered auto-apply preference (on by default), using the same validation and undo path as reviewed changes. Clear chat cancels active work and deletes persisted messages. A global clear-data dialog provides separate board/code/notes clears and a full reset with a table-flip animation, confirmation, export access, keyboard handling, and reduced-motion support. Cleared domains discard their undo stacks; a full reset removes artifacts and history and restores the auto-apply default.
 - **Teaching instructions:** Answer-first explanations, short paragraphs, defined terms and symbols, concrete examples, respectful corrections, and detail matched to the student's question. These are prompt policies; model responses remain probabilistic.
 - **Isolated Python:** Separate origin, restrictive CSP, message validation, a Worker per run, local Pyodide assets, ten-second execution and 64 KiB output limits, immediate initial trace output, and restart after completion/Stop/failure. No application secrets or workspace data enter the runner beyond the submitted code.
 

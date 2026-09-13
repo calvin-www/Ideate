@@ -90,7 +90,9 @@ export function useExecution() {
         ],
       };
     });
-    state.navigate("code");
+    // Execution must not reset an existing editor/output arrangement.
+    if (state.view !== "code" && !state.visibleTools.includes("code"))
+      state.navigate("code");
     return new Promise<Run>((resolve, reject) => {
       pending.current = { id: run.id, resolve };
       try {

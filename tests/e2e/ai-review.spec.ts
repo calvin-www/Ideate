@@ -129,6 +129,9 @@ async function openJournal(page: Page) {
   await page
     .getByRole("button", { name: "Toggle study partner", exact: true })
     .click();
+  await partner(page)
+    .getByRole("switch", { name: "Auto-apply changes" })
+    .uncheck();
 }
 
 async function askForReview(page: Page, prompt: string) {

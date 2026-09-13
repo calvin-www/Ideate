@@ -95,6 +95,128 @@ async function snapshot(page: Page): Promise<Workspace> {
   );
 }
 
+test("journal selection stays visible on every selected line", async ({ page }, testInfo) => {
+  await open(page, "Journal");
+  const journal = page.getByRole("region", { name: "Study journal", exact: true });
+  const editor = journal.getByRole("textbox");
+  const passage = "First journal line.\nSecond **bold** journal line.\nThird journal line.";
+  await editor.click();
+  await editor.press("ControlOrMeta+A");
+  await page.keyboard.insertText(passage);
+  await editor.press("ControlOrMeta+Home");
+  await editor.press("ControlOrMeta+Shift+End");
+  await expect.poll(() => editor.evaluate(() => window.getSelection()?.toString())).toBe(passage);
+  await expect(journal.locator(".cm-selectionBackground").last()).toBeVisible();
+  // Opaque active-line paint sits above CodeMirror's drawn selection layer.
+  // It must clear while selecting, including the line containing the head.
+  await expect(journal.locator(".cm-activeLine")).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+  const backgrounds = await journal.locator(".cm-selectionBackground").evaluateAll((nodes) =>
+    nodes.map((node) => getComputedStyle(node).backgroundColor),
+  );
+  expect(new Set(backgrounds).size).toBe(1);
+  expect(backgrounds[0]).not.toBe("rgba(0, 0, 0, 0)");
+  await page.screenshot({ path: testInfo.outputPath("journal-selection.png") });
+  await editor.press("ArrowRight");
+  await expect(journal.locator(".cm-selectionBackground")).toHaveCount(0);
+  await expect(journal.locator(".cm-activeLine")).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+});
+
+for (const domain of ["Computer", "Journal"] as const) {
+  test(`${domain} multiline attention encompasses the passage in one box`, async ({ page }, testInfo) => {
+    const target = domain === "Computer" ? "code" : "notes";
+    await fixture(page, (context) => [{
+      target,
+      revision: context[target].revision,
+      from: 0,
+      to: context[target].text.indexOf("\n\nOutside"),
+      mode: "highlight",
+      label: "The complete passage",
+    }]);
+    await open(page, domain);
+    const panel = page.getByRole("region", {
+      name: domain === "Computer" ? "Python workspace" : "Study journal",
+      exact: true,
+    });
+    const editor = panel.getByRole("textbox");
+    await editor.click();
+    await editor.press("ControlOrMeta+A");
+    const passage = domain === "Journal"
+      ? `First marked paragraph.\n\n${"Second marked paragraph wraps across the editor. ".repeat(5)}\n\nThird marked paragraph.`
+      : "First marked line.\nSecond marked line is longer.\nThird marked line.";
+    await page.keyboard.insertText(`${passage}\n\nOutside this passage.`);
+    await ask(page);
+    const boxes = panel.locator(`[data-attention-target="${target}"] [data-attention-box]`);
+    await expect(boxes).toHaveCount(1);
+    const bounds = (await boxes.boundingBox())!;
+    const lines = await panel.locator(".cm-line").evaluateAll((nodes) => nodes.filter((node) => node.textContent?.trim()).slice(0, 3).map((node) => {
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      return range.getBoundingClientRect().toJSON();
+    }));
+    for (const line of lines) {
+      expect(bounds.x).toBeLessThanOrEqual(line.left + 1);
+      expect(bounds.y).toBeLessThanOrEqual(line.top + 1);
+      expect(bounds.x + bounds.width).toBeGreaterThanOrEqual(line.right - 1);
+      expect(bounds.y + bounds.height).toBeGreaterThanOrEqual(line.bottom - 1);
+    }
+    const outside = await panel.locator(".cm-line").last().boundingBox();
+    expect(bounds.y + bounds.height).toBeLessThan(outside!.y);
+    await page.screenshot({ path: testInfo.outputPath(`${target}-multiline-cue.png`) });
+    if (domain === "Journal") {
+      await panel.getByRole("tab", { name: "Preview", exact: true }).click();
+      await expect(boxes).toHaveCount(1);
+      await expect(boxes).toBeVisible();
+      const previewBounds = (await boxes.boundingBox())!;
+      const paragraphs = await panel.locator("article > p").evaluateAll((nodes) =>
+        nodes.slice(0, 3).map((node) => node.getBoundingClientRect().toJSON()),
+      );
+      expect(previewBounds.y).toBeLessThanOrEqual(paragraphs[0].top + 1);
+      expect(previewBounds.y + previewBounds.height).toBeGreaterThanOrEqual(paragraphs[2].bottom - 1);
+    }
+  });
+}
+
+for (const origin of ["Computer", "Journal", "Desk"]) {
+  test(`Show from ${origin} reveals the Python source behind its output tab`, async ({
+    page,
+  }) => {
+    const results = await fixture(page, ({ code }) => [
+      {
+        target: "code",
+        revision: code.revision,
+        from: 0,
+        to: 10,
+        mode: "highlight",
+        label: "Source behind output",
+      },
+    ]);
+    await open(page, "Computer");
+    await page
+      .getByRole("button", { name: "Move output", exact: true })
+      .click();
+    await page
+      .getByRole("dialog", { name: "Output position" })
+      .getByRole("button", { name: "Tab with editor", exact: true })
+      .click();
+    const editor = page
+      .getByRole("region", { name: "Python workspace", exact: true })
+      .getByRole("textbox");
+    await expect(editor).toBeHidden();
+    if (origin !== "Computer") await navigate(page, origin);
+    await ask(page);
+    await page
+      .getByRole("button", { name: "Show in Python Source behind output" })
+      .click();
+    await expect(editor).toBeVisible();
+    expect(results.map((result) => result.visible)).toEqual([false]);
+    await expect(page.locator('[data-attention-target="code"]')).toBeVisible();
+    await page.getByRole("tab", { name: "Output", exact: true }).click();
+    await navigate(page, "Journal");
+    await navigate(page, "Computer");
+    await expect(editor).toBeHidden();
+  });
+}
+
 test("Python highlights preserve selections and source, follow scroll, and clear on edit", async ({
   page,
 }, testInfo) => {
@@ -233,7 +355,7 @@ test("whiteboard cues follow zoom and pan without editing the drawing", async ({
     {
       target: "board",
       revision: board.revision,
-      ids: [board.elements.find((e) => e.type === "rectangle")!.id],
+      ids: board.elements.filter((e) => e.type === "rectangle").slice(0, 2).map((e) => e.id),
       mode: "highlight",
       label: "This search value",
     },
@@ -244,6 +366,7 @@ test("whiteboard cues follow zoom and pan without editing the drawing", async ({
     .click();
   const before = await snapshot(page);
   await ask(page);
+  await expect(page.locator('[data-attention-target="board"] [data-attention-box]')).toHaveCount(2);
   const box = page
     .locator('[data-attention-target="board"] [data-attention-box]')
     .first();

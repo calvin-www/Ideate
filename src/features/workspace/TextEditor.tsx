@@ -31,9 +31,16 @@ const theme = EditorView.theme({
     padding: "0 5px",
   },
   ".cm-activeLine, .cm-activeLineGutter": { backgroundColor: "#edf1e7" },
+  // Active-line paint sits above the drawn selection and would hide its last line.
+  "&.cm-has-selection .cm-activeLine": { backgroundColor: "transparent" },
   ".cm-scroller": { overflow: "auto" },
   "&.cm-focused": { outline: "none" },
 });
+const selectionAppearance = EditorView.editorAttributes.of((view) =>
+  view.state.selection.ranges.some((range) => !range.empty)
+    ? { class: "cm-has-selection" }
+    : null,
+);
 const documentLimit = EditorState.transactionFilter.of((transaction) => {
   if (transaction.docChanged && transaction.newDoc.length > 200_000) {
     queueMicrotask(() =>
@@ -67,10 +74,17 @@ const executionLineField = StateField.define({
   },
   provide: (field) => EditorView.decorations.from(field),
 });
-const pythonExtensions = [python(), theme, documentLimit, executionLineField];
+const pythonExtensions = [
+  python(),
+  theme,
+  selectionAppearance,
+  documentLimit,
+  executionLineField,
+];
 const noteExtensions = [
   markdown(),
   theme,
+  selectionAppearance,
   documentLimit,
   EditorView.lineWrapping,
 ];

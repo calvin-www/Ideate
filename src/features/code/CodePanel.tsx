@@ -9,6 +9,9 @@ import {
 import { Bug, Download, FileCode2, Play, Square, Trash2 } from "lucide-react";
 import type { DebugSession } from "../execution/useExecution";
 import DebugPanel from "./DebugPanel";
+import OutputPanelLayout from "./OutputPanelLayout";
+import OutputLayoutControls from "./OutputLayoutControls";
+import { useOutputLayout } from "../workspace/OutputLayoutContext";
 import TextEditor from "../workspace/TextEditor";
 import { adapters } from "../workspace/adapters";
 import type { Run } from "../workspace/model";
@@ -55,6 +58,7 @@ export default function CodePanel({
   resumeDebug,
 }: CodePanelProps) {
   const code = useWorkspace((state) => state.data.code);
+  const outputLayout = useOutputLayout();
   const runs = useWorkspace((state) => state.data.runs);
   const selection = useWorkspace((state) => state.selection);
   const latestRun = runs.at(-1);
@@ -143,6 +147,7 @@ export default function CodePanel({
 
   function revealErrorLine() {
     if (!run?.line || stale) return;
+    outputLayout?.showSource();
     const lines = run.code.split("\n");
     const line = Math.min(Math.max(run.line, 1), lines.length);
     const from = lines
@@ -259,156 +264,174 @@ export default function CodePanel({
           onResume={resumeDebug}
         />
       )}
-      <div
-        className={styles.divider}
-        role="separator"
-        aria-label="Resize output panel"
-        aria-orientation="horizontal"
-        aria-valuemin={110}
-        aria-valuemax={Math.max(
-          140,
-          Math.floor((panel.current?.clientHeight ?? 680) * 0.7),
-        )}
-        aria-valuenow={outputHeight}
-        tabIndex={0}
-        onPointerDown={beginResize}
-        onDoubleClick={() => resizeOutput(228)}
-        onKeyDown={(event) => {
-          if (event.key === "ArrowUp" || event.key === "ArrowDown") {
-            event.preventDefault();
-            resizeOutput(outputHeight + (event.key === "ArrowUp" ? 24 : -24));
-          }
-          if (event.key === "Home") {
-            event.preventDefault();
-            resizeOutput(110);
-          }
-          if (event.key === "End") {
-            event.preventDefault();
-            resizeOutput(10000);
-          }
-        }}
-      >
-        <span />
-      </div>
-      <div className={styles.outputPanel} style={{ height: outputHeight }}>
-        <div className={styles.outputToolbar}>
-          <div className={styles.outputHeading}>
-            <h2>Output</h2>
-            {run && (
-              <span
-                className={`${styles.runStatus} ${run.status === "error" || run.status === "timeout" ? styles.errorStatus : ""}`}
-                role="status"
-              >
-                {debugSession?.pause && run.status === "running"
-                  ? "Paused"
-                  : RUN_LABELS[run.status]}
-                {run.status === "success" && run.durationMs > 0
-                  ? ` in ${run.durationMs < 1000 ? `${Math.round(run.durationMs)} ms` : `${(run.durationMs / 1000).toFixed(1)} s`}`
-                  : ""}
-              </span>
+      <OutputPanelLayout
+        height={outputHeight}
+        divider={
+          <div
+            className={styles.divider}
+            role="separator"
+            aria-label="Resize output panel"
+            aria-orientation="horizontal"
+            aria-valuemin={110}
+            aria-valuemax={Math.max(
+              140,
+              Math.floor((panel.current?.clientHeight ?? 680) * 0.7),
             )}
-          </div>
-          <button
-            type="button"
-            className={styles.clearButton}
-            disabled={!run || running}
-            onClick={() => {
-              if (run) {
-                setClearedRun(run.id);
-                if (selection?.runId === run.id)
-                  useWorkspace.setState({ selection: null });
+            aria-valuenow={outputHeight}
+            tabIndex={0}
+            onPointerDown={beginResize}
+            onDoubleClick={() => resizeOutput(228)}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+                event.preventDefault();
+                resizeOutput(
+                  outputHeight + (event.key === "ArrowUp" ? 24 : -24),
+                );
+              }
+              if (event.key === "Home") {
+                event.preventDefault();
+                resizeOutput(110);
+              }
+              if (event.key === "End") {
+                event.preventDefault();
+                resizeOutput(10000);
               }
             }}
-            title="Clear displayed output"
           >
-            <Trash2 size={13} aria-hidden="true" />
-            Clear
-          </button>
-        </div>
-        {stale && (
-          <div className={styles.stale}>
-            This output is from an earlier version of main.py. Run again to use
-            your latest changes.
+            <span />
           </div>
-        )}
-        <div className={styles.outputScroll}>
-          {run ? (
-            <>
-              {(run.output || run.error) && (
-                <pre
-                  ref={output}
-                  className={styles.outputText}
-                  tabIndex={0}
-                  aria-label="Python output"
-                  onMouseUp={captureOutputSelection}
-                  onTouchEnd={captureOutputSelection}
-                  onKeyUp={captureOutputSelection}
+        }
+      >
+        <div
+          className={styles.outputPanel}
+          role="region"
+          aria-label="Python output panel"
+        >
+          <div className={styles.outputToolbar}>
+            <div className={styles.outputHeading}>
+              <h2>Output</h2>
+              {run && (
+                <span
+                  className={`${styles.runStatus} ${run.status === "error" || run.status === "timeout" ? styles.errorStatus : ""}`}
+                  role="status"
                 >
-                  {run.output}
-                  {run.error && !run.output.includes(run.error)
-                    ? `${run.output && !run.output.endsWith("\n") ? "\n" : ""}${run.error}`
+                  {debugSession?.pause && run.status === "running"
+                    ? "Paused"
+                    : RUN_LABELS[run.status]}
+                  {run.status === "success" && run.durationMs > 0
+                    ? ` in ${run.durationMs < 1000 ? `${Math.round(run.durationMs)} ms` : `${(run.durationMs / 1000).toFixed(1)} s`}`
                     : ""}
-                </pre>
+                </span>
               )}
-              {run.status === "success" && !run.output && !run.error && (
-                <p className={styles.emptyResult}>
-                  Completed successfully. This program did not print any output.
+            </div>
+            <div className={styles.outputActions}>
+              <OutputLayoutControls />
+              <button
+                type="button"
+                className={styles.clearButton}
+                disabled={!run || running}
+                onClick={() => {
+                  if (run) {
+                    setClearedRun(run.id);
+                    if (selection?.runId === run.id)
+                      useWorkspace.setState({ selection: null });
+                  }
+                }}
+                title="Clear displayed output"
+              >
+                <Trash2 size={13} aria-hidden="true" />
+                Clear
+              </button>
+            </div>
+          </div>
+          {stale && (
+            <div className={styles.stale}>
+              This output is from an earlier version of main.py. Run again to
+              use your latest changes.
+            </div>
+          )}
+          <div className={styles.outputScroll}>
+            {run ? (
+              <>
+                {(run.output || run.error) && (
+                  <pre
+                    ref={output}
+                    className={styles.outputText}
+                    tabIndex={0}
+                    aria-label="Python output"
+                    onMouseUp={captureOutputSelection}
+                    onTouchEnd={captureOutputSelection}
+                    onKeyUp={captureOutputSelection}
+                  >
+                    {run.output}
+                    {run.error && !run.output.includes(run.error)
+                      ? `${run.output && !run.output.endsWith("\n") ? "\n" : ""}${run.error}`
+                      : ""}
+                  </pre>
+                )}
+                {run.status === "success" && !run.output && !run.error && (
+                  <p className={styles.emptyResult}>
+                    Completed successfully. This program did not print any
+                    output.
+                  </p>
+                )}
+                {run.status === "running" && !run.output && (
+                  <p className={styles.emptyResult}>
+                    {debugSession?.pause
+                      ? "Paused. Step or Continue to execute the next line."
+                      : "Running your Python…"}
+                  </p>
+                )}
+                {run.status === "cancelled" && (
+                  <p className={styles.emptyResult}>
+                    Run stopped. You can edit your code and try again.
+                  </p>
+                )}
+                {run.status === "interrupted" && (
+                  <p className={styles.emptyResult}>
+                    This run was interrupted. Run it again to get a complete
+                    result.
+                  </p>
+                )}
+                {run.status === "timeout" && !run.error && (
+                  <p className={styles.emptyResult}>
+                    This program reached the time limit. Check loops that may
+                    not finish, then run again.
+                  </p>
+                )}
+                {run.line && !stale && (
+                  <button
+                    type="button"
+                    className={styles.lineLink}
+                    onClick={revealErrorLine}
+                  >
+                    Go to main.py, line {run.line}
+                  </button>
+                )}
+              </>
+            ) : (
+              <div className={styles.emptyOutput}>
+                <Play size={19} strokeWidth={1.4} aria-hidden="true" />
+                <p>
+                  {clearedRun ? "Output cleared" : "See what your code does"}
                 </p>
-              )}
-              {run.status === "running" && !run.output && (
-                <p className={styles.emptyResult}>
-                  {debugSession?.pause
-                    ? "Paused. Step or Continue to execute the next line."
-                    : "Running your Python…"}
-                </p>
-              )}
-              {run.status === "cancelled" && (
-                <p className={styles.emptyResult}>
-                  Run stopped. You can edit your code and try again.
-                </p>
-              )}
-              {run.status === "interrupted" && (
-                <p className={styles.emptyResult}>
-                  This run was interrupted. Run it again to get a complete
-                  result.
-                </p>
-              )}
-              {run.status === "timeout" && !run.error && (
-                <p className={styles.emptyResult}>
-                  This program reached the time limit. Check loops that may not
-                  finish, then run again.
-                </p>
-              )}
-              {run.line && !stale && (
-                <button
-                  type="button"
-                  className={styles.lineLink}
-                  onClick={revealErrorLine}
-                >
-                  Go to main.py, line {run.line}
-                </button>
-              )}
-            </>
-          ) : (
-            <div className={styles.emptyOutput}>
-              <Play size={19} strokeWidth={1.4} aria-hidden="true" />
-              <p>{clearedRun ? "Output cleared" : "See what your code does"}</p>
-              <span>
-                {clearedRun
-                  ? "Run Python to see the next result."
-                  : "Run Python to see printed values and errors here."}
-              </span>
+                <span>
+                  {clearedRun
+                    ? "Run Python to see the next result."
+                    : "Run Python to see printed values and errors here."}
+                </span>
+              </div>
+            )}
+          </div>
+          {run?.output && (
+            <div className={styles.outputHint}>
+              {selection?.runId === run.id
+                ? "Selected output is attached to your next chat message."
+                : "Select a few lines of output to discuss them with your study partner."}
             </div>
           )}
         </div>
-        {run?.output && (
-          <div className={styles.outputHint}>
-            {selection?.runId === run.id
-              ? "Selected output is attached to your next chat message."
-              : "Select a few lines of output to discuss them with your study partner."}
-          </div>
-        )}
-      </div>
+      </OutputPanelLayout>
     </section>
   );
 }

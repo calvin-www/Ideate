@@ -1,5 +1,7 @@
 # Voice Collaboration Implementation Plan
 
+User amendment during implementation: pause retains the visible partial code/drawing as a validated undoable checkpoint. The earlier instructions to discard interrupted previews are superseded by this requested behavior. See the design amendment and integration report.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox syntax for tracking.
 
 **Goal:** A first live voice session in which Gemini speaks through ElevenLabs while reversible workspace edits appear progressively, and interruptions stop both outputs.

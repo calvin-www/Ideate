@@ -10,13 +10,17 @@ import {
   Maximize2,
   Minimize2,
 } from "lucide-react";
-import { tools, toolTitles } from "./layoutPersistence";
+import {
+  tools,
+  panelTitles as toolTitles,
+  type EditorPanel,
+} from "./layoutPersistence";
 import type { Tool } from "./model";
 import type { Placement } from "./editorDock";
 import styles from "./WorkspaceLayout.module.css";
 
 type Props = {
-  focused: Tool;
+  focused: EditorPanel;
   advanced: boolean;
   maximized: boolean;
   narrow: boolean;

@@ -23,10 +23,17 @@ const SCRIBE_URL = "wss://api.elevenlabs.io/v1/speech-to-text/realtime";
 const SPEECH_RMS_THRESHOLD = 0.035;
 const SPEECH_START_MS = 180;
 const SPEECH_RESET_SILENCE_MS = 650;
+const SOCKET_OPEN_TIMEOUT_MS = 8_000;
 let playbackContext: AudioContext | undefined;
+
+class VoiceTransportError extends Error {}
 
 function abortError(): DOMException {
   return new DOMException("The operation was aborted.", "AbortError");
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
 }
 
 function audioContext(): AudioContext {
@@ -47,6 +54,12 @@ export async function unlockAudio(): Promise<void> {
   source.disconnect();
 }
 
+export async function closeAudio(): Promise<void> {
+  const context = playbackContext;
+  playbackContext = undefined;
+  if (context && context.state !== "closed") await context.close();
+}
+
 function bytesToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
   let binary = "";
@@ -57,6 +70,7 @@ function bytesToBase64(buffer: ArrayBuffer): string {
 }
 
 function publicError(error: unknown, fallback: string): string {
+  if (error instanceof VoiceTransportError) return error.message;
   if (error instanceof DOMException && error.name === "NotAllowedError") {
     return "Microphone access was denied. You can keep using text chat.";
   }
@@ -73,7 +87,7 @@ async function fetchScribeToken(signal: AbortSignal): Promise<string> {
     error?: unknown;
   };
   if (!response.ok || typeof payload.token !== "string") {
-    throw new Error(
+    throw new VoiceTransportError(
       typeof payload.error === "string"
         ? payload.error
         : "Could not start transcription.",
@@ -164,10 +178,32 @@ export async function connectMicrophone(
       const nextSocket = new WebSocket(url);
       socket = nextSocket;
       await new Promise<void>((resolve, reject) => {
-        const rejectOpen = () => reject(new Error("Transcription connection failed."));
-        nextSocket.addEventListener("open", () => resolve(), { once: true });
-        nextSocket.addEventListener("error", rejectOpen, { once: true });
-        nextSocket.addEventListener("close", rejectOpen, { once: true });
+        const cleanup = () => {
+          clearTimeout(timer);
+          nextSocket.removeEventListener("open", opened);
+          nextSocket.removeEventListener("error", failed);
+          nextSocket.removeEventListener("close", failed);
+        };
+        const opened = () => {
+          cleanup();
+          resolve();
+        };
+        const failed = () => {
+          cleanup();
+          reject(new Error("Transcription connection failed."));
+        };
+        const timer = setTimeout(() => {
+          cleanup();
+          nextSocket.close();
+          reject(
+            new VoiceTransportError(
+              "Transcription connection timed out. Turn the microphone on again.",
+            ),
+          );
+        }, SOCKET_OPEN_TIMEOUT_MS);
+        nextSocket.addEventListener("open", opened, { once: true });
+        nextSocket.addEventListener("error", failed, { once: true });
+        nextSocket.addEventListener("close", failed, { once: true });
       });
       if (currentGeneration !== generation || !active || muted) {
         nextSocket.close();
@@ -206,7 +242,7 @@ export async function connectMicrophone(
             message.message_type,
           )
         ) {
-          fail(undefined, "Transcription stopped. Start voice again.");
+          fail(undefined, "Transcription stopped. Turn the microphone on again.");
         }
       };
       nextSocket.onclose = () => {
@@ -216,12 +252,12 @@ export async function connectMicrophone(
           !signal.aborted &&
           currentGeneration === generation
         ) {
-          fail(undefined, "Transcription connection closed. Start voice again.");
+          fail(undefined, "Transcription connection closed. Turn the microphone on again.");
         }
       };
       nextSocket.onerror = () => {
         if (currentGeneration === generation) {
-          fail(undefined, "Transcription connection failed. Start voice again.");
+          fail(undefined, "Transcription connection failed. Turn the microphone on again.");
         }
       };
     } finally {
@@ -304,6 +340,7 @@ export async function connectMicrophone(
     mute(value: boolean) {
       if (!active || muted === value) return;
       muted = value;
+      for (const track of stream?.getTracks() ?? []) track.enabled = !value;
       resetDetector();
       callbacks.onPartial("");
       capture?.port.postMessage({ type: "mute", value });
@@ -312,7 +349,18 @@ export async function connectMicrophone(
       socket?.close();
       socket = undefined;
       if (!value) {
-        void openSocket().catch((error) => {
+        const reopening = openSocket();
+        const reopenGeneration = generation;
+        void reopening.catch((error) => {
+          if (
+            !active ||
+            muted ||
+            signal.aborted ||
+            generation !== reopenGeneration ||
+            isAbortError(error)
+          ) {
+            return;
+          }
           fail(error, "Could not restart transcription.");
         });
       }
@@ -358,7 +406,9 @@ export async function speak(
   const sources = new Set<AudioBufferSourceNode>();
   const completions: Promise<void>[] = [];
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+  const requestController = new AbortController();
   const cancel = () => {
+    requestController.abort(signal.reason);
     void reader?.cancel().catch(() => undefined);
     for (const source of sources) {
       try {
@@ -376,13 +426,13 @@ export async function speak(
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ text }),
-      signal,
+      signal: requestController.signal,
     });
     if (!response.ok || !response.body) {
       const payload = (await response.json().catch(() => ({}))) as {
         error?: unknown;
       };
-      throw new Error(
+      throw new VoiceTransportError(
         typeof payload.error === "string"
           ? payload.error
           : "Speech playback could not start.",
@@ -429,7 +479,17 @@ export async function speak(
     if (!started || carry !== undefined) {
       throw new Error("Speech response did not contain valid PCM audio.");
     }
-    await Promise.all(completions);
+    await new Promise<void>((resolve, reject) => {
+      const onAbort = () => reject(abortError());
+      if (signal.aborted) {
+        onAbort();
+        return;
+      }
+      signal.addEventListener("abort", onAbort, { once: true });
+      void Promise.all(completions).then(() => resolve(), reject).finally(() => {
+        signal.removeEventListener("abort", onAbort);
+      });
+    });
     if (signal.aborted) throw abortError();
   } catch (error) {
     cancel();

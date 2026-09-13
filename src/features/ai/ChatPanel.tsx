@@ -218,7 +218,8 @@ export default function ChatPanel({ collaborator, onReference }: Props) {
                 type="button"
                 onClick={() => {
                   const state = useWorkspace.getState();
-                  if (state.view !== cue.target) state.navigate(cue.target);
+                  if (!state.visibleTools.includes(cue.target))
+                    state.navigate(cue.target, { reveal: true });
                   useWorkspace.setState({
                     attention: { ...state.attention, [cue.target]: { ...cue } },
                   });

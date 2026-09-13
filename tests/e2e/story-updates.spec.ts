@@ -101,8 +101,7 @@ test("auto-apply renders math, survives reload, and clearing chat persists witho
   const toggle = partner(page).getByRole("switch", {
     name: "Auto-apply changes",
   });
-  await expect(toggle).not.toBeChecked();
-  await toggle.check();
+  await expect(toggle).toBeChecked();
   await partner(page)
     .getByRole("textbox", { name: "Ask your study partner" })
     .fill("Record the equation.");
@@ -212,9 +211,15 @@ test("domain clearing is scoped and full clearing stops debugging, flips the tab
     .toBeGreaterThan(0);
   await page.getByRole("button", { name: "Toggle study partner" }).click();
   await partner(page)
+    .getByRole("switch", { name: "Auto-apply changes" })
+    .uncheck();
+  await partner(page)
     .getByRole("textbox", { name: "Ask your study partner" })
     .fill("Keep my unsent question");
   await clear(page, "whiteboard");
+  await expect(
+    partner(page).getByRole("switch", { name: "Auto-apply changes" }),
+  ).not.toBeChecked();
   await expect(
     partner(page).getByRole("textbox", { name: "Ask your study partner" }),
   ).toHaveValue("Keep my unsent question");
@@ -259,6 +264,11 @@ test("domain clearing is scoped and full clearing stops debugging, flips the tab
   expect(data.runs).toEqual([]);
   expect(data.messages).toEqual([]);
   expect(data.changes).toEqual([]);
+  await expect(partner(page)).toHaveCount(0);
+  await page.getByRole("button", { name: "Toggle study partner" }).click();
+  await expect(
+    partner(page).getByRole("switch", { name: "Auto-apply changes" }),
+  ).toBeChecked();
 });
 
 test("mobile debugger and clear controls fit, with reduced-motion confirmation", async ({

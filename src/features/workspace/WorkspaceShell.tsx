@@ -2,15 +2,14 @@
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ArrowLeft,
   BookOpen,
   Check,
   Download,
   Home,
   LoaderCircle,
+  MessageCircle,
   Monitor,
   PenTool,
-  Sparkles,
   Upload,
   X,
 } from "lucide-react";
@@ -22,6 +21,8 @@ import { useExecution } from "../execution/useExecution";
 import { RUNNER_URL } from "../execution/runner-client";
 import { useCollaborator } from "../ai/useCollaborator";
 import ChatPanel from "../ai/ChatPanel";
+import { useVoiceSession } from "../voice/useVoiceSession";
+import VoiceControls from "../voice/VoiceControls";
 import CodePanel from "../code/CodePanel";
 import NotePanel from "../notes/NotePanel";
 import WorkspaceDataControls from "./WorkspaceDataControls";
@@ -62,11 +63,13 @@ export default function WorkspaceShell() {
     hydrated,
     saveStatus,
     saveError,
-    selection,
     notice,
   } = state;
   const execution = useExecution();
-  const collaborator = useCollaborator(execution.runCode, execution.stopCode);
+  const voice = useVoiceSession();
+  const engine = useCollaborator(execution.runCode, execution.stopCode, voice.hooks);
+  voice.bind(engine);
+  const collaborator = { ...engine, ask: voice.submit };
   const [source, setSource] = useState<ArtifactRef | null>(null);
   const [reducedMotion, setReducedMotion] = useState(false);
   const [flat, setFlat] = useState(false);
@@ -230,14 +233,14 @@ export default function WorkspaceShell() {
           {nav.map((item) => (
             <button
               key={item.id}
-              className={view === item.id ? "active" : ""}
+              className={state.page === item.id ? "active" : ""}
               aria-label={item.label}
               title={
                 item.id === "desk"
                   ? "Back to desk"
                   : `${item.label} (Alt+${["board", "code", "notes"].indexOf(item.id) + 1})`
               }
-              aria-current={view === item.id ? "page" : undefined}
+              aria-current={state.page === item.id ? "page" : undefined}
               onClick={() => open(item.id)}
               data-open={item.id}
             >
@@ -247,6 +250,7 @@ export default function WorkspaceShell() {
           ))}
         </nav>
         <div className="header-actions">
+          <div ref={setLayoutToolbar} className="editor-layout-controls" hidden={view === "desk"} />
           <span
             className={`save-status ${saveStatus}`}
             title={saveError || "Saved in this browser"}
@@ -283,15 +287,17 @@ export default function WorkspaceShell() {
           >
             <Upload size={17} />
           </button>
-          <button
-            className={`partner-toggle ${chatOpen ? "selected" : ""}`}
-            aria-label="Toggle study partner"
-            aria-expanded={chatOpen}
-            onClick={() => useWorkspace.setState({ chatOpen: !chatOpen })}
-          >
-            <Sparkles size={16} />
-            <span>Study partner</span>
-          </button>
+          <VoiceControls voice={voice} disabled={!hydrated}>
+            <button
+              className={`icon-button partner-toggle ${chatOpen ? "selected" : ""}`}
+              aria-label="Toggle study partner"
+              title={chatOpen ? "Close study partner" : "Open study partner"}
+              aria-expanded={chatOpen}
+              onClick={() => useWorkspace.setState({ chatOpen: !chatOpen })}
+            >
+              <MessageCircle size={17} />
+            </button>
+          </VoiceControls>
           <WorkspaceDataControls
             disabled={!hydrated}
             onExport={exportWorkspace}
@@ -333,6 +339,7 @@ export default function WorkspaceShell() {
               )
             )
               return;
+            voice.stop();
             collaborator.cancel();
             execution.stopCode();
             useWorkspace.setState({
@@ -465,23 +472,7 @@ export default function WorkspaceShell() {
                     </button>
                   </div>
                 </section>
-              ) : (
-                <div className="tool-context">
-                  <button className="back-button" onClick={() => open("desk")}>
-                    <ArrowLeft size={15} />
-                    Back to desk
-                  </button>
-                  <span className="workspace-title">{data.title}</span>
-                  <span className="tool-subtitle">
-                    {view === "board"
-                      ? "A thought, made visible"
-                      : view === "code"
-                        ? "Try it. See what happens."
-                        : "Keep the part that clicks."}
-                  </span>
-                  <div ref={setLayoutToolbar} className="editor-layout-controls" />
-                </div>
-              )}
+              ) : null}
               <WorkspaceLayout toolbar={layoutToolbar} renderEditor={(tool, visible) =>
                 tool === "board" ? (
                   <BoardEditor
@@ -507,44 +498,6 @@ export default function WorkspaceShell() {
                   />
                 )
               } />
-              {view !== "desk" && (
-                <div className="study-actions">
-                  <span>
-                    {selection
-                      ? "Work with your selection"
-                      : "Think it through together"}
-                  </span>
-                  {[
-                    {
-                      label: "Explain visually",
-                      prompt: "Explain this visually using the whiteboard.",
-                    },
-                    {
-                      label: "Give me a hint",
-                      prompt:
-                        "Give me one helpful hint about this, without the full solution.",
-                    },
-                    {
-                      label: "Show Python",
-                      prompt:
-                        "Show this in Python with trace prints. Propose an edit to my code.",
-                    },
-                    {
-                      label: "Add to notes",
-                      prompt:
-                        "Add what we learned from this to my notes, with source references.",
-                    },
-                  ].map((action) => (
-                    <button
-                      key={action.label}
-                      disabled={!!state.jobId}
-                      onClick={() => void collaborator.ask(action.prompt)}
-                    >
-                      {action.label}
-                    </button>
-                  ))}
-                </div>
-              )}
             </>
           )}
         </main>

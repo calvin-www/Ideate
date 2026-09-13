@@ -8,6 +8,26 @@ const revision = z.number().int().nonnegative();
 const id = z.string().min(1).max(200);
 const summary = z.string().min(1).max(600);
 const coordinate = z.number().min(-100_000).max(100_000);
+const shapeAddition = z.strictObject({
+  type: z.enum(["rectangle", "ellipse", "diamond", "text"]),
+  x: coordinate,
+  y: coordinate,
+  width: z.number().min(1).max(10_000),
+  height: z.number().min(1).max(10_000),
+  text: z.string().max(2_000).optional(),
+});
+const arrowAddition = z.strictObject({
+  type: z.literal("arrow"),
+  x: coordinate,
+  y: coordinate,
+  width: z.number().min(-10_000).max(10_000).describe("Horizontal displacement from start to end; negative points left, zero is vertical."),
+  height: z.number().min(-10_000).max(10_000).describe("Vertical displacement from start to end; negative points up, zero is horizontal."),
+  text: z.string().max(2_000).optional(),
+  startId: id.optional(),
+  endId: id.optional(),
+}).refine((arrow) => arrow.width !== 0 || arrow.height !== 0, {
+  path: ["width"], message: "An arrow must move: width and height cannot both be zero.",
+});
 const textPatch = z.strictObject({
   baseRevision: revision,
   replacements: z
@@ -46,17 +66,9 @@ const workspaceToolSchemas = {
     baseRevision: revision,
     additions: z
       .array(
-        z.union([
-          z.strictObject({
-            type: z.enum(["rectangle", "ellipse", "diamond", "text", "arrow"]),
-            x: coordinate,
-            y: coordinate,
-            width: z.number().min(1).max(10_000),
-            height: z.number().min(1).max(10_000),
-            text: z.string().max(2_000).optional(),
-            startId: id.optional(),
-            endId: id.optional(),
-          }),
+        z.discriminatedUnion("type", [
+          shapeAddition,
+          arrowAddition,
           freehandAdditionSchema,
         ]),
       )
@@ -133,7 +145,7 @@ const descriptions: Record<ToolName, string> = {
   edit_notes:
     "Propose Markdown replacements at baseRevision using UTF-16 offsets. By default append at text.length using from=to=text.length. Preserve existing notes. Include relevant source IDs and observed run evidence.",
   edit_board:
-    "Propose editable diagram additions, updates, or deletions at baseRevision, including pen/freehand drawings. For a pen stroke add {type:'freedraw', points:[{x,y}, ...], strokeColor?, strokeWidth?}. Points are ordered absolute board coordinates (2-512 per stroke, at most 10000 units per axis); no x/y/width/height fields are needed for freedraw. Each stroke is a separate element; repeat the first point to close a loop. Shapes/text/arrows use x/y/width/height as usual. This does not apply changes. Include empty arrays for unused fields. Arrow bindings may reference existing element IDs only.",
+    "Propose editable diagram additions, updates, or deletions at baseRevision, including pen/freehand drawings. For a pen stroke add {type:'freedraw', points:[{x,y}, ...], strokeColor?, strokeWidth?}. Points are ordered absolute board coordinates (2-512 per stroke, at most 10000 units per axis); no x/y/width/height fields are needed for freedraw. Each stroke is a separate element; repeat the first point to close a loop. Shapes/text use positive width and height. Arrows start at x/y and end at x+width/y+height: signed width/height allow left/up arrows and one may be zero. This does not apply changes. Include empty arrays for unused fields. Never supply IDs for additions. To connect a new node, first create it, wait for acceptance, read its assigned ID, then add a bound arrow; bindings reference existing element IDs only.",
   run_python:
     "Request execution of the exact current Python revision only when the student's request explicitly asks to run/test/execute. An explanation or code-edit request does not authorize execution. Wait for the actual ExecutionRun result.",
   link_artifacts:
@@ -183,4 +195,23 @@ export function validateToolCall(
   )
     return undefined;
   return parsed.data;
+}
+
+/** Bounded field diagnostics for a repair request; never include argument values. */
+export function toolValidationIssues(name: string, args: unknown): string[] {
+  if (!Object.hasOwn(toolSchemas, name)) return ["Unknown operation. Use one of the declared tools."];
+  if (validateToolCall(name, args)) return [];
+  const parsed = toolSchemas[name as ToolName].safeParse(args);
+  if (!parsed.success) return parsed.error.issues.slice(0, 6).map((issue) => {
+    const path = issue.path.map(String).join(".") || "arguments";
+    const message = issue.code === "invalid_union"
+      ? "Use a declared operation/element type with only its required and optional fields."
+      : issue.message;
+    return `${path}: ${message}`.slice(0, 200);
+  });
+  if (name === "teach_step") {
+    const step = parsed.data as { operation?: { name: string; args: unknown } };
+    if (step.operation) return toolValidationIssues(step.operation.name, step.operation.args).map((issue) => `operation.args.${issue}`.slice(0, 200));
+  }
+  return ["Use valid ordered, non-overlapping text ranges and the declared revision/attention constraints."];
 }

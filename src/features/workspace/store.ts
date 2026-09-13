@@ -20,9 +20,11 @@ type Store = {
   hydrated: boolean;
   recoveryNeeded: boolean;
   view: View;
+  page: View;
   visited: Tool[];
   visibleTools: Tool[];
   navigationEpoch: number;
+  navigationReveal: Tool | null;
   focusTool: (tool: Tool) => void;
   chatOpen: boolean;
   autoApplyChanges: boolean;
@@ -39,7 +41,7 @@ type Store = {
   clearData: (scope: ClearScope) => void;
   editorEpochs: Record<Tool, number>;
   setData: (update: (data: Workspace) => Workspace) => void;
-  navigate: (view: View) => void;
+  navigate: (view: View, options?: { reveal?: boolean }) => void;
   setText: (target: "code" | "notes", text: string) => void;
   setBoard: (elements: BoardElement[], files?: BoardFiles) => void;
 };
@@ -48,14 +50,16 @@ export const useWorkspace = create<Store>((set, get) => ({
   hydrated: false,
   recoveryNeeded: false,
   view: "desk",
+  page: "desk",
   visited: [],
   visibleTools: [],
   navigationEpoch: 0,
+  navigationReveal: null,
   focusTool: (tool) => {
     if (get().view !== tool) set({ view: tool, selection: null });
   },
   chatOpen: false,
-  autoApplyChanges: false,
+  autoApplyChanges: true,
   setAutoApplyChanges: (enabled) => {
     set({ autoApplyChanges: enabled });
     try {
@@ -81,7 +85,7 @@ export const useWorkspace = create<Store>((set, get) => ({
     const editorEpochs = { ...current.editorEpochs };
     for (const tool of ["board", "code", "notes"] as const)
       if (scope === "all" || scope === tool) editorEpochs[tool]++;
-    if (scope === "all") current.setAutoApplyChanges(false);
+    if (scope === "all") current.setAutoApplyChanges(true);
     set({
       data: clearWorkspaceData(current.data, scope),
       editorEpochs,
@@ -94,6 +98,7 @@ export const useWorkspace = create<Store>((set, get) => ({
             saveError: "",
             notice: "",
             view: "desk" as const,
+            page: "desk" as const,
           }
         : {}),
     });
@@ -106,11 +111,13 @@ export const useWorkspace = create<Store>((set, get) => ({
     set({ attention });
   },
   setData: (update) => set({ data: compactWorkspace(update(get().data)) }),
-  navigate: (view) => {
+  navigate: (view, options) => {
     flushSave();
     set({
       view,
+      page: view,
       navigationEpoch: get().navigationEpoch + 1,
+      navigationReveal: options?.reveal && view !== "desk" ? view : null,
       selection: null,
       visited:
         view === "desk"
@@ -174,11 +181,11 @@ export async function hydrateWorkspace() {
     if (typeof window !== "undefined") {
       useWorkspace.setState({
         autoApplyChanges:
-          window.localStorage.getItem("ideate:auto-apply-changes") === "true",
+          window.localStorage.getItem("ideate:auto-apply-changes") !== "false",
       });
     }
   } catch {
-    /* Defaults to review when browser preferences are unavailable. */
+    /* Keep auto-apply on when browser preferences are unavailable. */
   }
   try {
     const data = await loadWorkspace();

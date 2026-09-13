@@ -8,14 +8,24 @@ import {
   themeLight,
 } from "dockview-react";
 import type { SerializedDockview } from "dockview-react";
-import { Maximize2, PanelsTopLeft, PictureInPicture2, X } from "lucide-react";
+import {
+  Maximize2,
+  PanelsTopLeft,
+  PictureInPicture2,
+  Undo2,
+  X,
+} from "lucide-react";
 import { EditorDock, type DockState, type OpenEditor } from "./editorDock";
-import { isTool, toolTitles } from "./layoutPersistence";
+import {
+  isEditorPanel,
+  panelTitles,
+  type EditorPanel,
+} from "./layoutPersistence";
 import type { Tool } from "./model";
 import styles from "./WorkspaceLayout.module.css";
 import "dockview-react/dist/styles/dockview.css";
 
-type Hosts = Record<Tool, HTMLElement>;
+type Hosts = Record<EditorPanel, HTMLElement>;
 type Context = {
   hosts: Hosts;
   park: (host: HTMLElement) => void;
@@ -27,7 +37,7 @@ function EditorMount({ api }: IDockviewPanelProps) {
   const mount = useRef<HTMLDivElement>(null);
   const context = useContext(DockContext)!;
   useLayoutEffect(() => {
-    if (!isTool(api.id) || !mount.current) return;
+    if (!isEditorPanel(api.id) || !mount.current) return;
     const host = context.hosts[api.id];
     const parent = mount.current;
     parent.append(host);
@@ -45,9 +55,9 @@ function HeaderActions({
   containerApi,
 }: IDockviewHeaderActionsProps) {
   const context = useContext(DockContext)!;
-  if (!activePanel || !isTool(activePanel.id)) return null;
+  if (!activePanel || !isEditorPanel(activePanel.id)) return null;
   const tool = activePanel.id;
-  const title = toolTitles[tool];
+  const title = panelTitles[tool];
   const floating = location?.type === "floating";
   return (
     <div className={styles.groupActions}>
@@ -82,11 +92,13 @@ function HeaderActions({
       )}
       <button
         type="button"
-        aria-label={`Hide ${title}`}
-        title={`Hide ${title}`}
+        aria-label={
+          tool === "output" ? "Return output to editor" : `Hide ${title}`
+        }
+        title={tool === "output" ? "Return output to editor" : `Hide ${title}`}
         onClick={() => context.controller()?.hide(tool)}
       >
-        <X size={14} />
+        {tool === "output" ? <Undo2 size={14} /> : <X size={14} />}
       </button>
     </div>
   );
@@ -97,6 +109,7 @@ type Props = {
   park: (host: HTMLElement) => void;
   initialLayout: SerializedDockview | null;
   initialTool: Tool;
+  initialFocus: Tool | null;
   start?: OpenEditor;
   onChange: (state: DockState) => void;
   onController: (controller: EditorDock | null) => void;
@@ -139,6 +152,8 @@ export default function DockedEditors(props: Props) {
             current.current.initialTool,
             current.current.start,
           );
+          if (current.current.initialFocus)
+            instance.focus(current.current.initialFocus);
         }}
       />
     </DockContext.Provider>

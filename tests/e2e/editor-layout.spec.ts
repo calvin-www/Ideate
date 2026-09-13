@@ -58,6 +58,8 @@ test("splits real editors and preserves undo when returning to the default", asy
   const right = await journal(page).boundingBox();
   expect(left!.x + left!.width).toBeLessThanOrEqual(right!.x + 12);
   await layout(page, "Single editor");
+  await expect(editor).toBeVisible();
+  await expect(journal(page)).toBeHidden();
   await page
     .getByRole("navigation", { name: "Workspace tools" })
     .getByRole("button", { name: "Computer", exact: true })
@@ -136,9 +138,8 @@ test("floats Python above the board and restores its bounds after maximizing", a
   await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
   await page
     .getByRole("navigation", { name: "Workspace tools" })
-    .getByRole("button", { name: "Computer", exact: true })
+    .getByRole("button", { name: "Whiteboard", exact: true })
     .click();
-  await layout(page, "Restore saved layout");
   await expect
     .poll(async () =>
       Math.abs((await python(page).boundingBox())!.width - before!.width),
@@ -179,7 +180,7 @@ test("persists resized splits and falls back to the single editor on narrow scre
   const resized = await python(page).boundingBox();
   await expect
     .poll(() =>
-      page.evaluate(() => localStorage.getItem("ideate:editor-layout:v1")),
+      page.evaluate(() => localStorage.getItem("ideate:page-layouts:v1")),
     )
     .not.toBeNull();
   await page.reload();
@@ -188,7 +189,6 @@ test("persists resized splits and falls back to the single editor on narrow scre
     .getByRole("navigation", { name: "Workspace tools" })
     .getByRole("button", { name: "Computer", exact: true })
     .click();
-  await layout(page, "Restore saved layout");
   await expect(journal(page)).toBeVisible();
   await expect
     .poll(async () =>
@@ -205,40 +205,140 @@ test("persists resized splits and falls back to the single editor on narrow scre
   await page.setViewportSize({ width: 600, height: 850 });
   await page
     .getByRole("navigation", { name: "Workspace tools" })
+    .getByRole("button", { name: "Whiteboard", exact: true })
+    .click();
+  await page
+    .getByRole("navigation", { name: "Workspace tools" })
     .getByRole("button", { name: "Computer", exact: true })
     .click();
   await page.setViewportSize({ width: 1440, height: 1000 });
-  await expect(page.locator(".dv-tab")).toHaveCount(0);
+  await expect(page.locator(".dv-tab")).toHaveCount(2);
   await expect(python(page)).toBeVisible();
-  await expect(journal(page)).toBeHidden();
-  await layout(page, "Restore saved layout");
   await expect(journal(page)).toBeVisible();
 });
 
-test("header navigation always opens each editor full size and retains the split arrangement", async ({
+test("returning to Computer retains its resized split", async ({ page }) => {
+  await open(page);
+  await layout(page, "Split with Whiteboard");
+  const divider = await page
+    .locator(
+      ".dv-split-view-container.dv-horizontal > .dv-sash-container > .dv-sash",
+    )
+    .filter({ visible: true })
+    .first()
+    .boundingBox();
+  await page.mouse.move(
+    divider!.x + divider!.width / 2,
+    divider!.y + divider!.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(divider!.x - 100, divider!.y + divider!.height / 2, {
+    steps: 10,
+  });
+  await page.mouse.up();
+  const before = await python(page).boundingBox();
+  const editor = await python(page).getByRole("textbox").elementHandle();
+  const navigation = page.getByRole("navigation", { name: "Workspace tools" });
+  await navigation
+    .getByRole("button", { name: "Whiteboard", exact: true })
+    .click();
+  await navigation
+    .getByRole("button", { name: "Computer", exact: true })
+    .click();
+  await expect(
+    page.getByRole("tab", { name: "Whiteboard", exact: true }),
+  ).toBeVisible();
+  await expect
+    .poll(async () =>
+      Math.abs((await python(page).boundingBox())!.width - before!.width),
+    )
+    .toBeLessThan(3);
+  expect(
+    await python(page)
+      .getByRole("textbox")
+      .evaluate((element, previous) => element === previous, editor),
+  ).toBe(true);
+  await navigation.getByRole("button", { name: "Desk", exact: true }).click();
+  await navigation
+    .getByRole("button", { name: "Computer", exact: true })
+    .click();
+  await expect
+    .poll(async () =>
+      Math.abs((await python(page).boundingBox())!.width - before!.width),
+    )
+    .toBeLessThan(3);
+});
+
+test("header pages remember independent split, floating, and tabbed arrangements", async ({
   page,
 }) => {
   await open(page);
+  const navigation = page.getByRole("navigation", { name: "Workspace tools" });
+  const go = (name: string) =>
+    navigation.getByRole("button", { name, exact: true }).click();
   await layout(page, "Split with Journal");
-  for (const name of ["Computer", "Whiteboard", "Journal"]) {
-    await page
-      .getByRole("navigation", { name: "Workspace tools" })
-      .getByRole("button", { name, exact: true })
-      .click();
-    await expect(page.locator("[data-editor-tool]:visible")).toHaveCount(1);
-    await expect(page.locator(".dv-tab")).toHaveCount(0);
-    const expected =
-      name === "Computer"
-        ? python(page)
-        : name === "Journal"
-          ? journal(page)
-          : page.getByRole("region", { name: "Whiteboard tool", exact: true });
-    await expect(expected).toBeVisible();
-    const bounds = await expected.boundingBox();
-    expect(bounds!.width).toBeGreaterThan(1300);
-    await layout(page, "Restore saved layout");
-    await expect(page.locator(".dv-tab")).toHaveCount(2);
-  }
+  const computerWidth = (await python(page).boundingBox())!.width;
+  await expect(
+    navigation.getByRole("button", { name: "Computer", exact: true }),
+  ).toHaveAttribute("aria-current", "page");
+  await go("Whiteboard");
+  await expect(page.locator(".dv-tab")).toHaveCount(0);
+  await expect(python(page)).toBeHidden();
+  await layout(page, "Float Python");
+  const floating = await python(page).boundingBox();
+  await expect(
+    navigation.getByRole("button", { name: "Whiteboard", exact: true }),
+  ).toHaveAttribute("aria-current", "page");
+  await go("Journal");
+  await expect(page.locator(".dv-tab")).toHaveCount(0);
+  expect((await journal(page).boundingBox())!.width).toBeGreaterThan(1300);
+  await layout(page, "Tab with Whiteboard");
+  await expect(
+    navigation.getByRole("button", { name: "Journal", exact: true }),
+  ).toHaveAttribute("aria-current", "page");
+  await go("Computer");
+  await expect(journal(page)).toBeVisible();
+  await expect(page.locator(".dv-floating-titlebar")).toHaveCount(0);
+  await expect
+    .poll(async () =>
+      Math.abs((await python(page).boundingBox())!.width - computerWidth),
+    )
+    .toBeLessThan(3);
+  await go("Desk");
+  await go("Whiteboard");
+  await expect(page.locator(".dv-floating-titlebar")).toBeVisible();
+  await expect
+    .poll(async () =>
+      Math.abs((await python(page).boundingBox())!.width - floating!.width),
+    )
+    .toBeLessThan(3);
+  await page.reload();
+  await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
+  await go("Journal");
+  await expect(
+    page.getByRole("tab", { name: "Journal", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("tab", { name: "Whiteboard", exact: true }),
+  ).toBeVisible();
+  await expect(page.locator(".dv-floating-titlebar")).toHaveCount(0);
+  await go("Whiteboard");
+  await expect(page.locator(".dv-floating-titlebar")).toBeVisible();
+  await layout(page, "Reset layout");
+  await expect(page.locator(".dv-tab")).toHaveCount(0);
+  await expect(
+    page.getByRole("region", { name: "Whiteboard tool", exact: true }),
+  ).toBeVisible();
+  await expect(python(page)).toBeHidden();
+  await go("Computer");
+  await expect(python(page)).toBeVisible();
+  await expect(journal(page)).toBeVisible();
+  await layout(page, "Single editor");
+  await go("Whiteboard");
+  await go("Computer");
+  await expect(page.locator(".dv-tab")).toHaveCount(0);
+  await layout(page, "Restore saved layout");
+  await expect(journal(page)).toBeVisible();
 });
 
 test("docks a floating editor and keeps single mode after hiding the last panel", async ({
@@ -258,7 +358,8 @@ test("docks a floating editor and keeps single mode after hiding the last panel"
     .poll(() =>
       page.evaluate(
         () =>
-          JSON.parse(localStorage.getItem("ideate:editor-layout:v1")!).enabled,
+          JSON.parse(localStorage.getItem("ideate:page-layouts:v1")!).pages
+            .board.enabled,
       ),
     )
     .toBe(false);

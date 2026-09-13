@@ -1,5 +1,5 @@
 "use client";
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import {
   getCommonBounds,
   sceneCoordsToViewportCoords,
@@ -7,6 +7,7 @@ import {
 import type { ExcalidrawImperativeAPI } from "@excalidraw/excalidraw/types";
 import { useWorkspace } from "../workspace/store";
 import AttentionOverlay from "../ai/AttentionOverlay";
+import { frameBoardCamera, ownsBoardCamera } from "./camera";
 
 export default function BoardAttention({
   api,
@@ -16,6 +17,10 @@ export default function BoardAttention({
   active: boolean;
 }) {
   const cue = useWorkspace((s) => s.attention.board);
+  const framing = useRef<number | null>(null);
+  useEffect(() => () => {
+    if (framing.current !== null) cancelAnimationFrame(framing.current);
+  }, []);
   const elements = useCallback(
     () =>
       api
@@ -49,15 +54,20 @@ export default function BoardAttention({
     [api, elements],
   );
   const reveal = useCallback(() => {
-    const targets = elements();
-    if (targets.length)
-      api.scrollToContent(targets, {
-        fitToViewport: true,
-        viewportZoomFactor: 0.7,
-        maxZoom: api.getAppState().zoom.value,
-        animate: false,
-      });
-  }, [api, elements]);
+    if (framing.current !== null) cancelAnimationFrame(framing.current);
+    framing.current = requestAnimationFrame(() => {
+      framing.current = null;
+      if (useWorkspace.getState().attention.board?.id !== cue?.id || ownsBoardCamera(api, cue?.jobId)) return;
+      const targets = elements();
+      if (targets.length)
+        frameBoardCamera(api, () => api.scrollToContent(targets, {
+          fitToViewport: true,
+          viewportZoomFactor: 0.7,
+          maxZoom: Math.min(1, api.getAppState().zoom.value),
+          animate: false,
+        }));
+    });
+  }, [api, cue, elements]);
   const subscribe = useCallback(
     (update: () => void) => api.onChange(update),
     [api],

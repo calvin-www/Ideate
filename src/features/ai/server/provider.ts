@@ -40,7 +40,7 @@ export const generateStream: GenerateStream = async (
       systemInstruction:
         SYSTEM_INSTRUCTION +
         (recovery
-          ? "\nThe last generation reached its output limit. Keep this step concise. Use a small, complete tool operation; leave additional operations for subsequent steps."
+          ? "\nKeep this recovery concise and follow any validation feedback. Use a small, complete tool operation; leave additional operations for subsequent steps."
           : ""),
       tools: [{ functionDeclarations }],
       automaticFunctionCalling: { disable: true },
