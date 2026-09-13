@@ -282,12 +282,34 @@ describe("real Excalidraw board adapter", () => {
       ],
     });
     expect(updated.id).toBe(text.id);
-    expect(Number(updated.width)).toBeGreaterThan(Number(text.width));
+    // The requested width is kept; the longer label wraps and grows downward.
+    expect(Number(updated.width)).toBe(100);
     expect(Number(updated.height)).toBeGreaterThan(Number(text.height));
     expect(updated.originalText).toBe(
       "A considerably longer label\nwith a second line",
     );
     expect(Number(updated.version)).toBeGreaterThan(Number(text.version));
+  });
+
+  it("wraps free text to its requested width instead of running off in one line", async () => {
+    const [text] = await patch([], {
+      additions: [
+        {
+          type: "text",
+          x: 20,
+          y: 20,
+          width: 320,
+          height: 230,
+          text: "Managed APIs\n\nPros: the fastest path to a working prototype with zero infrastructure burden.",
+        },
+      ],
+    });
+    expect(text.autoResize).toBe(false);
+    expect(Number(text.width)).toBe(320);
+    expect(text.originalText).toBe(
+      "Managed APIs\n\nPros: the fastest path to a working prototype with zero infrastructure burden.",
+    );
+    expect(String(text.text).split("\n").length).toBeGreaterThan(3);
   });
 
   it("keeps a resized bound label inside its container with the original label ID", async () => {

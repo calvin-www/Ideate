@@ -428,8 +428,10 @@ export async function buildBoardPatch(
       (item.startId !== undefined || item.endId !== undefined)
     )
       throw new Error("Only arrows can have binding targets.");
+    // Free text keeps the requested width and wraps inside it; otherwise
+    // Excalidraw auto-sizes it to one long line that runs past its neighbors.
     if (item.type === "text")
-      return { ...base, text: text ?? "", fontSize: 20 };
+      return { ...base, text: text ?? "", fontSize: 20, autoResize: false };
     const label = text ? { label: { text, fontSize: 18 } } : {};
     if (item.type === "arrow")
       return {
@@ -452,6 +454,16 @@ export async function buildBoardPatch(
     { regenerateIds: false },
   );
   const added = converted.filter((element) => !bindingTargets.has(element.id));
+  // Conversion measures free text as one line regardless of the skeleton's
+  // width. Put the requested width back so the restore below wraps to it.
+  const requestedWidths = new Map(
+    skeletons.flatMap((skeleton) =>
+      skeleton.type === "text" ? [[skeleton.id, skeleton.width]] : [],
+    ),
+  );
+  for (const element of added)
+    if (element.type === "text" && requestedWidths.has(element.id))
+      Object.assign(element, { width: requestedWidths.get(element.id) });
   const combined: BoardElement[] = [...result, ...added];
   repairRelationships(combined);
   const restored = restoreElements(

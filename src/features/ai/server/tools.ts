@@ -8,13 +8,21 @@ const revision = z.number().int().nonnegative();
 const id = z.string().min(1).max(200);
 const summary = z.string().min(1).max(600);
 const coordinate = z.number().min(-100_000).max(100_000);
+// Gemini sometimes double-escapes line breaks inside function-call strings,
+// so a label arrives as the two characters backslash and n. A diagram label
+// never wants that sequence literally, so it is read as a line break. Code
+// and notes keep their text verbatim: a literal \n is meaningful there.
+const boardText = z
+  .string()
+  .max(2_000)
+  .overwrite((text) => text.replace(/\\n/g, "\n"));
 const shapeAddition = z.strictObject({
   type: z.enum(["rectangle", "ellipse", "diamond", "text"]),
   x: coordinate,
   y: coordinate,
   width: z.number().min(1).max(10_000),
   height: z.number().min(1).max(10_000),
-  text: z.string().max(2_000).optional(),
+  text: boardText.optional(),
 });
 const arrowAddition = z.strictObject({
   type: z.literal("arrow"),
@@ -22,7 +30,7 @@ const arrowAddition = z.strictObject({
   y: coordinate,
   width: z.number().min(-10_000).max(10_000).describe("Horizontal displacement from start to end; negative points left, zero is vertical."),
   height: z.number().min(-10_000).max(10_000).describe("Vertical displacement from start to end; negative points up, zero is horizontal."),
-  text: z.string().max(2_000).optional(),
+  text: boardText.optional(),
   startId: id.optional(),
   endId: id.optional(),
 }).refine((arrow) => arrow.width !== 0 || arrow.height !== 0, {
@@ -91,7 +99,7 @@ const workspaceToolSchemas = {
       .array(
         z.strictObject({
           id,
-          text: z.string().max(2_000).optional(),
+          text: boardText.optional(),
           strokeColor: z.string().max(32).optional(),
           backgroundColor: z.string().max(32).optional(),
           x: coordinate.optional(),
