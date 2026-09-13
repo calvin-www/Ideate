@@ -1,13 +1,22 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { BookOpen, Download, PencilLine } from "lucide-react";
 import ReactMarkdown, { type Components } from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { mathRemarkPlugins, mathRehypePlugins } from "../markdown/math";
 import TextEditor from "../workspace/TextEditor";
 import { adapters } from "../workspace/adapters";
 import { useWorkspace } from "../workspace/store";
 import styles from "./NotePanel.module.css";
+import AttentionOverlay from "../ai/AttentionOverlay";
+import { attentionPreview } from "./attentionPreview";
 
 export interface NotePanelProps {
   active: boolean;
@@ -41,6 +50,64 @@ export default function NotePanel({ active, onReference }: NotePanelProps) {
   const saveError = useWorkspace((state) => state.saveError);
   const [mode, setMode] = useState<"edit" | "preview">("edit");
   const id = useId();
+  const preview = useRef<HTMLDivElement>(null);
+  const cue = useWorkspace((state) => state.attention.notes);
+  const previewTargets = useCallback(() => {
+    if (!cue || cue.target === "board" || !preview.current) return [];
+    const matches = Array.from(
+      preview.current.querySelectorAll<HTMLElement>("[data-study-from]"),
+    ).filter((node) => {
+      const from = Number(node.dataset.studyFrom),
+        to = Number(node.dataset.studyTo);
+      return cue.from === cue.to
+        ? cue.from >= from && cue.from <= to
+        : cue.from < to && cue.to > from;
+    });
+    // Drop a parent only when a child contains the entire requested passage.
+    // A range spanning a parent list item and its children needs the parent box.
+    const specific = matches.filter(
+      (node) =>
+        !matches.some(
+          (child) =>
+            child !== node &&
+            node.contains(child) &&
+            Number(child.dataset.studyFrom) <= cue.from &&
+            Number(child.dataset.studyTo) >= cue.to,
+        ),
+    );
+    return specific.filter(
+      (node) =>
+        !specific.some((parent) => parent !== node && parent.contains(node)),
+    );
+  }, [cue]);
+  const measurePreview = useCallback(
+    () => previewTargets().map((node) => node.getBoundingClientRect()),
+    [previewTargets],
+  );
+  const revealPreview = useCallback(
+    () =>
+      previewTargets()[0]?.scrollIntoView({
+        block: "center",
+        behavior: "instant",
+      }),
+    [previewTargets],
+  );
+  const subscribePreview = useCallback(
+    (update: () => void) => {
+      const observer = new ResizeObserver(update);
+      const article = preview.current?.querySelector("article");
+      if (article) observer.observe(article);
+      previewTargets().forEach((node) => observer.observe(node));
+      return () => observer.disconnect();
+    },
+    [previewTargets],
+  );
+  useEffect(() => {
+    // Definitions, raw markup, and empty passages have no rendered block.
+    // Show the exact source range instead of pointing at unrelated prose.
+    if (active && mode === "preview" && cue && !previewTargets().length)
+      setMode("edit");
+  }, [active, mode, cue, previewTargets]);
   const markdownComponents = useMemo<Components>(
     () => ({
       a: ({ href, children }) => {
@@ -187,42 +254,57 @@ export default function NotePanel({ active, onReference }: NotePanelProps) {
         <TextEditor target="notes" active={active && mode === "edit"} />
       </div>
       <div
-        className={styles.preview}
-        id={`${id}-preview`}
-        role="tabpanel"
-        aria-labelledby={`${id}-preview-tab`}
-        tabIndex={0}
+        className={styles.previewSurface}
         hidden={mode !== "preview"}
         inert={mode !== "preview"}
       >
-        <article className={styles.markdown}>
-          {notes.trim() ? (
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              skipHtml
-              components={markdownComponents}
-            >
-              {notes}
-            </ReactMarkdown>
-          ) : (
-            <div className={styles.emptyNotes}>
-              <BookOpen size={24} strokeWidth={1.3} aria-hidden="true" />
-              <h2>Leave yourself a useful thought.</h2>
-              <p>
-                A question, a prediction, or the step that finally made sense.
-              </p>
-              <button
-                type="button"
-                onClick={() => {
-                  setMode("edit");
-                  requestAnimationFrame(() => adapters.notes?.focus());
-                }}
+        <div
+          ref={preview}
+          className={styles.preview}
+          id={`${id}-preview`}
+          role="tabpanel"
+          aria-labelledby={`${id}-preview-tab`}
+          tabIndex={0}
+          hidden={mode !== "preview"}
+          inert={mode !== "preview"}
+        >
+          <article className={styles.markdown}>
+            {notes.trim() ? (
+              <ReactMarkdown
+                remarkPlugins={mathRemarkPlugins}
+                rehypePlugins={[attentionPreview, ...mathRehypePlugins]}
+                skipHtml
+                components={markdownComponents}
               >
-                Start writing
-              </button>
-            </div>
-          )}
-        </article>
+                {notes}
+              </ReactMarkdown>
+            ) : (
+              <div className={styles.emptyNotes}>
+                <BookOpen size={24} strokeWidth={1.3} aria-hidden="true" />
+                <h2>Leave yourself a useful thought.</h2>
+                <p>
+                  A question, a prediction, or the step that finally made sense.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode("edit");
+                    requestAnimationFrame(() => adapters.notes?.focus());
+                  }}
+                >
+                  Start writing
+                </button>
+              </div>
+            )}
+          </article>
+        </div>
+        <AttentionOverlay
+          cue={cue}
+          active={active && mode === "preview"}
+          measure={measurePreview}
+          reveal={revealPreview}
+          subscribe={subscribePreview}
+        />
       </div>
       <div className={styles.footer}>
         <span

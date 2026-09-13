@@ -43,6 +43,37 @@ afterEach(() => {
 });
 
 describe("application runner client", () => {
+  it("keeps paused debugging alive and sends each resume only once", () => {
+    vi.useFakeTimers();
+    const { client, frame, emit, completions, statuses } = setup();
+    emit({ type: "status", status: "ready" });
+    client.run({ id: "debug", code: "x = 1", debug: true });
+    emit({ type: "status", status: "running" });
+    emit({
+      type: "paused",
+      id: "debug",
+      pauseId: 1,
+      line: 1,
+      functionName: "<module>",
+      locals: [],
+    });
+    vi.advanceTimersByTime(60_000);
+    expect(completions).toEqual([]);
+    expect(statuses.at(-1)).toBe("paused");
+    client.resume("step");
+    client.resume("step");
+    expect(
+      frame.sent.filter((entry: any) => entry.message.type === "resume"),
+    ).toHaveLength(1);
+    expect(frame.sent.at(-1)).toMatchObject({
+      message: { type: "resume", id: "debug", pauseId: 1, command: "step" },
+    });
+    emit({ type: "status", status: "running" });
+    vi.advanceTimersByTime(12_000);
+    expect(completions).toMatchObject([["debug", { status: "timeout" }]]);
+    client.dispose();
+  });
+
   it("trusts only the configured frame origin and exact window source", () => {
     const { client, emit, outputs, completions } = setup();
     client.run({ id: "run-1", code: "print(42)" });

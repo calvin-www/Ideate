@@ -21,6 +21,7 @@ import {
 // This module contains only schemas and type-only SDK imports; it has no key,
 // provider client, or other server runtime dependency.
 import { validateToolCall } from "./server/tools";
+import { checkAttention, parseAttention } from "./attention";
 
 export type PendingChange = {
   proposal: Proposal;
@@ -31,10 +32,12 @@ type Options = {
   stopCode?: () => void;
   onPending: (value: PendingChange | null) => void;
   onError: (message: string) => void;
+  onPause?: (message: string) => void;
   request?: typeof fetch;
 };
 type Call = { id: string; name: string; args: Record<string, unknown> };
-type Continuation = { contents: unknown[] };
+type Continuation = { contents: unknown[]; token?: string };
+type Resume = { contents: unknown[]; token: string; append: boolean };
 type Review = PendingChange & { resolve: (result: unknown) => void };
 type Job = {
   id: string;
@@ -245,14 +248,12 @@ function captureContext(
       outputTruncated: run.output.length > 4_000,
       sourceTruncated: run.code.length > 8_000,
     })),
-    recentChanges: data.changes
-      .slice(-10)
-      .map((change) => ({
-        id: change.id,
-        target: change.target,
-        revision: change.resultRevision,
-        summary: change.summary.slice(0, 300),
-      })),
+    recentChanges: data.changes.slice(-10).map((change) => ({
+      id: change.id,
+      target: change.target,
+      revision: change.resultRevision,
+      summary: change.summary.slice(0, 300),
+    })),
   };
 }
 
@@ -297,6 +298,8 @@ function explicitlyRequestsExecution(prompt: string): boolean {
 
 export function createCollaborator(options: Options) {
   let active: Job | null = null;
+  let suspended: { job: Job; resume: Resume; snapshot: Workspace } | null =
+    null;
   const request = options.request ?? fetch;
   const isActive = (job: Job) =>
     active === job &&
@@ -307,14 +310,12 @@ export function createCollaborator(options: Options) {
   };
   const updateAssistant = (job: Job, update: (message: Message) => Message) => {
     if (!isActive(job)) return;
-    useWorkspace
-      .getState()
-      .setData((data) => ({
-        ...data,
-        messages: data.messages.map((message) =>
-          message.id === job.assistantId ? update(message) : message,
-        ),
-      }));
+    useWorkspace.getState().setData((data) => ({
+      ...data,
+      messages: data.messages.map((message) =>
+        message.id === job.assistantId ? update(message) : message,
+      ),
+    }));
   };
   const rememberSource = (
     job: Job,
@@ -506,6 +507,12 @@ export function createCollaborator(options: Options) {
           : replaceRanges(data[target].text, proposal.replacements!);
       assertActive(job);
       checkProposal(useWorkspace.getState().data, proposal, job.id);
+      if (useWorkspace.getState().autoApplyChanges) {
+        return await new Promise((resolve) => {
+          job.review = { proposal, preview, resolve };
+          void approve();
+        });
+      }
       useWorkspace.setState({
         activity: `Review the proposed ${target === "code" ? "Python" : target} change`,
       });
@@ -535,7 +542,40 @@ export function createCollaborator(options: Options) {
     call.args = args;
     const data = useWorkspace.getState().data;
     let result: unknown;
-    if (call.name === "read_code" || call.name === "read_notes") {
+    if (call.name === "show_attention") {
+      const cue = parseAttention(args)!;
+      const status = checkAttention(data, cue);
+      if (status) {
+        result = {
+          status,
+          message:
+            "That target changed or is unavailable. Read the current artifact before pointing again.",
+        };
+      } else {
+        const state = useWorkspace.getState();
+        useWorkspace.setState({
+          attention: {
+            ...state.attention,
+            [cue.target]: {
+              ...cue,
+              id: call.id,
+              jobId: job.id,
+              workspaceId: data.id,
+            },
+          },
+        });
+        result = {
+          status: "shown",
+          target: cue.target,
+          visible: state.view === cue.target,
+          message:
+            "Cue set without editing. If the target domain is hidden, the student can use Show in chat.",
+        };
+      }
+    } else if (call.name === "clear_attention") {
+      useWorkspace.getState().clearAttention(args.target as Tool | undefined);
+      result = { status: "cleared" };
+    } else if (call.name === "read_code" || call.name === "read_notes") {
       const tool = call.name === "read_code" ? "code" : "notes";
       const range = textExcerpt(
         data[tool].text,
@@ -613,6 +653,7 @@ export function createCollaborator(options: Options) {
     job: Job,
     continuation?: Continuation,
     toolResults?: unknown[],
+    resume?: Resume,
   ) {
     assertActive(job);
     useWorkspace.setState({ activity: "Thinking through your workspace…" });
@@ -624,6 +665,7 @@ export function createCollaborator(options: Options) {
         messages: job.messages,
         context: job.context,
         ...(continuation ? { continuation, toolResults } : {}),
+        ...(resume ? { resume } : {}),
       }),
     });
     assertActive(job);
@@ -644,21 +686,95 @@ export function createCollaborator(options: Options) {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     const calls: Call[] = [];
+    const prefix =
+      useWorkspace
+        .getState()
+        .data.messages.find((message) => message.id === job.assistantId)
+        ?.text ?? "";
+    let displayIds = [job.assistantId];
+    let roundText = "";
     let buffer = "",
       next: Continuation | undefined,
-      bytes = 0,
-      hadText = false;
+      paused: { resume: Resume; message: string } | undefined,
+      bytes = 0;
+    const display = () => {
+      assertActive(job);
+      const text =
+        prefix +
+        (prefix && roundText && !resume?.append ? "\n\n" : "") +
+        roundText;
+      // Repeated explicit continuations can outgrow the persisted 200,000-char
+      // message limit. Split display records with room for status text; retain
+      // their IDs so a discarded attempt can still roll back just this round.
+      const chunks: string[] = [];
+      for (let from = 0; from < text.length; ) {
+        let to = Math.min(from + 180_000, text.length);
+        if (to < text.length && /[\uD800-\uDBFF]/.test(text[to - 1])) to--;
+        chunks.push(text.slice(from, to));
+        from = to;
+      }
+      if (!chunks.length) chunks.push("");
+      while (displayIds.length < chunks.length)
+        displayIds.push(crypto.randomUUID());
+      const previousIds = new Set(displayIds);
+      const nextIds = displayIds.slice(0, chunks.length);
+      useWorkspace.getState().setData((data) => {
+        const original = data.messages.find(
+          (message) => message.id === displayIds[0],
+        )!;
+        const messages = chunks.map((chunk, index) => ({
+          ...original,
+          id: nextIds[index],
+          text: chunk,
+          status: index === chunks.length - 1 ? "working" : "complete",
+        }));
+        return {
+          ...data,
+          messages: data.messages.flatMap((message) =>
+            message.id === displayIds[0]
+              ? messages
+              : previousIds.has(message.id)
+                ? []
+                : [message],
+          ),
+        };
+      });
+      displayIds = nextIds;
+      job.assistantId = nextIds.at(-1)!;
+    };
     const consume = (line: string) => {
       if (!line.trim()) return;
       assertActive(job);
       const event = JSON.parse(line) as Record<string, unknown>;
+      if (next || paused)
+        throw new CollaborationError(
+          "The AI response continued after finishing. Please try again.",
+        );
       if (event.type === "text" && typeof event.text === "string") {
-        const text = event.text;
-        updateAssistant(job, (message) => ({
-          ...message,
-          text: message.text + (!hadText && message.text ? "\n\n" : "") + text,
-        }));
-        hadText = true;
+        roundText += event.text;
+        display();
+      } else if (event.type === "replace" && typeof event.text === "string") {
+        roundText = event.text;
+        display();
+      } else if (event.type === "status" && typeof event.message === "string") {
+        useWorkspace.setState({ activity: event.message.slice(0, 200) });
+      } else if (
+        event.type === "paused" &&
+        typeof event.message === "string" &&
+        event.resume &&
+        typeof event.resume === "object" &&
+        Array.isArray((event.resume as Resume).contents) &&
+        typeof (event.resume as Resume).token === "string" &&
+        typeof (event.resume as Resume).append === "boolean"
+      ) {
+        if (calls.length)
+          throw new CollaborationError(
+            "An unfinished operation cannot be applied.",
+          );
+        paused = {
+          resume: event.resume as Resume,
+          message: event.message.slice(0, 500),
+        };
       } else if (
         event.type === "call" &&
         typeof event.id === "string" &&
@@ -711,11 +827,11 @@ export function createCollaborator(options: Options) {
       }
       buffer += decoder.decode();
       consume(buffer);
-      if (!next)
+      if (!next && !paused)
         throw new CollaborationError(
           "The AI response was interrupted. Please try again.",
         );
-      return { calls, continuation: next };
+      return { calls, continuation: next, paused };
     } finally {
       await reader.cancel().catch(() => undefined);
       reader.releaseLock();
@@ -732,6 +848,9 @@ export function createCollaborator(options: Options) {
     }
     options.onError("");
     options.onPending(null);
+    suspended?.job.controller.abort();
+    suspended = null;
+    options.onPause?.("");
     const selection = initial.selection
       ? structuredClone(initial.selection)
       : null;
@@ -762,6 +881,7 @@ export function createCollaborator(options: Options) {
       ],
       context: structuredClone({
         ...captureContext(initial.data, initial.view, selection),
+        editPolicy: initial.autoApplyChanges ? "auto-apply" : "review",
         sources,
       }),
       sources,
@@ -776,6 +896,7 @@ export function createCollaborator(options: Options) {
     };
     active = job;
     useWorkspace.setState({
+      attention: {},
       jobId: job.id,
       activity: "Reading your workspace…",
       chatOpen: true,
@@ -794,7 +915,7 @@ export function createCollaborator(options: Options) {
         },
       ],
     }));
-    try {
+    await runJob(job, undefined, async () => {
       if (
         (initial.view === "board" || selection?.tool === "board") &&
         adapters.board?.image
@@ -809,11 +930,38 @@ export function createCollaborator(options: Options) {
         )
           job.context.boardImage = image;
       }
+    });
+  }
+
+  async function runJob(
+    job: Job,
+    resume?: Resume,
+    prepare?: () => Promise<void>,
+  ): Promise<void> {
+    try {
+      await prepare?.();
       let continuation: Continuation | undefined,
         results: unknown[] | undefined;
-      for (let round = 0; round < 8; round++) {
-        const response = await modelRound(job, continuation, results);
+      // The ninth exchange lets the server pause at its eight-round limit
+      // after receiving the final tool results, without generating more output.
+      for (let round = 0; round < 9; round++) {
+        const response = await modelRound(
+          job,
+          continuation,
+          results,
+          round === 0 ? resume : undefined,
+        );
         assertActive(job);
+        if (response.paused) {
+          suspended = {
+            job,
+            resume: response.paused.resume,
+            snapshot: useWorkspace.getState().data,
+          };
+          updateAssistant(job, (message) => ({ ...message, status: "paused" }));
+          options.onPause?.(response.paused.message);
+          return;
+        }
         if (response.calls.length === 0) break;
         continuation = response.continuation;
         results = [];
@@ -823,7 +971,7 @@ export function createCollaborator(options: Options) {
           assertActive(job);
           results.push({ id: call.id, name: call.name, result });
         }
-        if (round === 7)
+        if (round === 8)
           updateAssistant(job, (message) => ({
             ...message,
             text:
@@ -840,6 +988,7 @@ export function createCollaborator(options: Options) {
       }));
     } catch (error) {
       if (isActive(job)) {
+        useWorkspace.getState().clearAttention();
         const message =
           error instanceof CollaborationError
             ? error.message
@@ -861,6 +1010,37 @@ export function createCollaborator(options: Options) {
         active = null;
       }
     }
+  }
+
+  async function resume(): Promise<void> {
+    const paused = suspended;
+    const state = useWorkspace.getState();
+    if (!paused || active || state.jobId) return;
+    suspended = null;
+    options.onPause?.("");
+    if (
+      paused.job.controller.signal.aborted ||
+      !state.data.messages.some(
+        (message) => message.id === paused.job.assistantId,
+      ) ||
+      (["board", "code", "notes"] as const).some(
+        (tool) => state.data[tool] !== paused.snapshot[tool],
+      )
+    ) {
+      paused.job.controller.abort();
+      options.onError(
+        "Your workspace changed while paused. Send a new request to use the current context.",
+      );
+      return;
+    }
+    active = paused.job;
+    useWorkspace.setState({
+      jobId: active.id,
+      activity: "Continuing the response…",
+    });
+    options.onError("");
+    updateAssistant(active, (message) => ({ ...message, status: "working" }));
+    await runJob(active, paused.resume);
   }
 
   async function approve(runAfter = false): Promise<void> {
@@ -922,9 +1102,13 @@ export function createCollaborator(options: Options) {
   }
 
   function cancel(): void {
+    suspended?.job.controller.abort();
+    suspended = null;
+    options.onPause?.("");
     const job = active;
     if (!job) return;
     const state = useWorkspace.getState();
+    state.clearAttention();
     job.controller.abort();
     if (
       job.ownedRunId &&
@@ -953,7 +1137,15 @@ export function createCollaborator(options: Options) {
     options.onPending(null);
     active = null;
   }
-  return { ask, approve, reject, cancel };
+  function clearHistory(): void {
+    cancel();
+    const state = useWorkspace.getState();
+    state.clearAttention();
+    state.setData((data) => ({ ...data, messages: [], updatedAt: Date.now() }));
+    options.onPending(null);
+    options.onError("");
+  }
+  return { ask, resume, approve, reject, cancel, clearHistory };
 }
 
 export function useCollaborator(
@@ -962,6 +1154,7 @@ export function useCollaborator(
 ) {
   const [pending, setPending] = useState<PendingChange | null>(null);
   const [error, setError] = useState("");
+  const [paused, setPaused] = useState("");
   const execution = useRef({ runCode, stopCode });
   execution.current = { runCode, stopCode };
   const controller = useRef<ReturnType<typeof createCollaborator> | null>(null);
@@ -971,10 +1164,11 @@ export function useCollaborator(
       stopCode: () => execution.current.stopCode?.(),
       onPending: setPending,
       onError: setError,
+      onPause: setPaused,
     });
   useEffect(() => {
     const current = controller.current;
     return () => current?.cancel();
   }, []);
-  return { ...controller.current, pending, error };
+  return { ...controller.current, pending, error, paused };
 }

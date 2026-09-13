@@ -120,6 +120,227 @@ async function complete(id: string) {
 }
 
 describe("separate-origin Python in a real browser", () => {
+  it.each(["concurrent", "scheduled"])(
+    "enforces the watchdog when %s work blocks an apparently paused debugger",
+    async (scenario) => {
+      await ready();
+      const id = `debug-busy-${scenario}`;
+      const code =
+        scenario === "concurrent"
+          ? 'import asyncio\nasync def first():\n    sum(range(10**10))\nasync def second():\n    x = 1\nawait asyncio.gather(first(), second())\nprint("done")'
+          : "import asyncio\nloop = asyncio.get_event_loop()\nloop.call_later(0.2, sum, range(10**10))\nx = 1";
+      await send({ type: "run", id, debug: true, code });
+      const last = scenario === "concurrent" ? 5 : 4;
+      for (let pauseId = 1; pauseId <= last; pauseId++) {
+        await expect
+          .poll(
+            async () =>
+              (await events()).some(
+                (event) =>
+                  event.id === id &&
+                  event.type === "paused" &&
+                  event.pauseId === pauseId,
+              ),
+            { timeout: 5000 },
+          )
+          .toBe(true);
+        if (scenario === "concurrent" || pauseId < last)
+          await send({ type: "resume", id, pauseId, command: "step" });
+      }
+      expect(await complete(id)).toMatchObject({ status: "timeout" });
+    },
+    30_000,
+  );
+
+  it("queues concurrent coroutine pauses without losing a suspended task", async () => {
+    await ready();
+    const id = "debug-concurrent";
+    await page.evaluate(
+      ({ id, runnerOrigin }) => {
+        const frame = (window as unknown as { runnerFrame: HTMLIFrameElement })
+          .runnerFrame;
+        const advance = (event: MessageEvent) => {
+          if (
+            event.source !== frame.contentWindow ||
+            event.origin !== runnerOrigin ||
+            event.data.id !== id
+          )
+            return;
+          if (event.data.type === "complete")
+            window.removeEventListener("message", advance);
+          if (event.data.type === "paused")
+            frame.contentWindow!.postMessage(
+              {
+                protocol: "ideate-python",
+                version: 1,
+                type: "resume",
+                id,
+                pauseId: event.data.pauseId,
+                command: "step",
+              },
+              runnerOrigin,
+            );
+        };
+        window.addEventListener("message", advance);
+      },
+      { id, runnerOrigin },
+    );
+    await send({
+      type: "run",
+      id,
+      debug: true,
+      code: "import asyncio\nasync def task(n):\n    await asyncio.sleep(0)\n    return n * 2\nvalues = await asyncio.gather(task(1), task(2))\nprint(values)",
+    });
+    expect(await complete(id)).toMatchObject({ status: "success" });
+    expect(
+      (await events())
+        .filter((event) => event.id === id && event.type === "output")
+        .map((event) => event.text)
+        .join(""),
+    ).toBe("[2, 4]\n");
+  }, 30_000);
+
+  it("steps across top-level await and preserves actual Python errors", async () => {
+    await ready();
+    const id = "debug-await";
+    await send({
+      type: "run",
+      id,
+      debug: true,
+      code: 'import asyncio\nawait asyncio.sleep(0)\nraise ValueError("after await")',
+    });
+    for (let pauseId = 1; pauseId <= 3; pauseId++) {
+      await expect
+        .poll(
+          async () =>
+            (await events()).find(
+              (event) =>
+                event.id === id &&
+                event.type === "paused" &&
+                event.pauseId === pauseId,
+            ),
+          { timeout: 5000 },
+        )
+        .toMatchObject({ line: pauseId });
+      await send({ type: "resume", id, pauseId, command: "step" });
+    }
+    expect(await complete(id)).toMatchObject({
+      status: "error",
+      line: 3,
+      error: expect.stringContaining("ValueError: after await"),
+    });
+  }, 30_000);
+
+  it("inspects custom objects without calling their metaclass or repr and tolerates non-string globals", async () => {
+    await ready();
+    const id = "debug-inspection";
+    await page.evaluate(
+      ({ id, runnerOrigin }) => {
+        const frame = (window as unknown as { runnerFrame: HTMLIFrameElement })
+          .runnerFrame;
+        const step = (event: MessageEvent) => {
+          if (
+            event.source !== frame.contentWindow ||
+            event.origin !== runnerOrigin ||
+            event.data.id !== id
+          )
+            return;
+          if (event.data.type === "complete")
+            window.removeEventListener("message", step);
+          if (event.data.type === "paused")
+            frame.contentWindow!.postMessage(
+              {
+                protocol: "ideate-python",
+                version: 1,
+                type: "resume",
+                id,
+                pauseId: event.data.pauseId,
+                command: "step",
+              },
+              runnerOrigin,
+            );
+        };
+        window.addEventListener("message", step);
+      },
+      { id, runnerOrigin },
+    );
+    await send({
+      type: "run",
+      id,
+      debug: true,
+      code: 'class Meta(type):\n    def __eq__(self, other):\n        raise ValueError("inspection called equality")\n    def __getattribute__(self, name):\n        raise ValueError("inspection called attribute")\nclass Thing(metaclass=Meta):\n    def __repr__(self):\n        raise ValueError("inspection called repr")\nx = Thing()\nglobals()[1] = 2\nprint("completed without inspection side effects")',
+    });
+    expect(await complete(id)).toMatchObject({ status: "success" });
+    expect(
+      (await events())
+        .filter((event) => event.id === id && event.type === "output")
+        .map((event) => event.text)
+        .join(""),
+    ).toBe("completed without inspection side effects\n");
+  }, 30_000);
+
+  it("pauses real Python before each source line, steps into functions, and continues once", async () => {
+    await ready();
+    const id = "debug-browser";
+    await send({
+      type: "run",
+      id,
+      debug: true,
+      code: "x = 1\ndef double(value):\n    answer = value * 2\n    return answer\nx = double(x)\nprint(x)",
+    });
+    async function paused(pauseId: number, line: number) {
+      await expect
+        .poll(
+          async () =>
+            (await events()).find(
+              (event) =>
+                event.id === id &&
+                event.type === "paused" &&
+                event.pauseId === pauseId,
+            ),
+          { timeout: 5000 },
+        )
+        .toMatchObject({ line });
+      return (await events()).find(
+        (event) =>
+          event.id === id &&
+          event.type === "paused" &&
+          event.pauseId === pauseId,
+      )!;
+    }
+    expect((await paused(1, 1)).locals).toEqual([]);
+    expect(
+      (await events()).some(
+        (event) => event.id === id && event.type === "complete",
+      ),
+    ).toBe(false);
+    await send({ type: "resume", id, pauseId: 1, command: "step" });
+    expect((await paused(2, 2)).locals).toContainEqual({
+      name: "x",
+      value: "1",
+    });
+    await send({ type: "resume", id, pauseId: 2, command: "step" });
+    await paused(3, 5);
+    await send({ type: "resume", id, pauseId: 3, command: "step" });
+    expect(await paused(4, 3)).toMatchObject({
+      functionName: "double",
+      locals: [{ name: "value", value: "1" }],
+    });
+    await send({ type: "resume", id, pauseId: 4, command: "step" });
+    expect((await paused(5, 4)).locals).toContainEqual({
+      name: "answer",
+      value: "2",
+    });
+    await send({ type: "resume", id, pauseId: 5, command: "continue" });
+    expect(await complete(id)).toMatchObject({ status: "success" });
+    expect(
+      (await events())
+        .filter((event) => event.id === id && event.type === "output")
+        .map((event) => event.text)
+        .join(""),
+    ).toBe("2\n");
+  }, 30_000);
+
   it("loads under its actual CSP and runs with no application globals", async () => {
     await send({
       type: "run",

@@ -17,6 +17,7 @@ beforeEach(() => {
     selection: null,
     jobId: null,
     activity: "",
+    autoApplyChanges: false,
   });
 });
 
@@ -122,6 +123,131 @@ function providerReadsThenNotes(
 }
 
 describe("client AI review lifecycle", () => {
+  it("auto-apply still rejects revisions changed while the model was responding", async () => {
+    useWorkspace.setState({ autoApplyChanges: true });
+    const provider = providerCall("edit_code", {
+      baseRevision: 0,
+      replacements: [{ from: 0, to: 0, text: "# stale\n" }],
+      summary: "Old proposal",
+    });
+    const collaborator = createCollaborator({
+      request: async (input, init) => {
+        const response = await provider.request(input, init);
+        if (provider.count() === 1)
+          useWorkspace.getState().setText("code", "# manual revision\n");
+        return response;
+      },
+      runCode: vi.fn(),
+      onPending: vi.fn(),
+      onError: vi.fn(),
+    });
+    await collaborator.ask("Add a comment");
+    expect(useWorkspace.getState().data.code.text).toBe("# manual revision\n");
+    expect(useWorkspace.getState().data.changes).toEqual([]);
+  });
+
+  it("ignores late streamed text after chat is cleared", async () => {
+    let stream!: ReadableStreamDefaultController<Uint8Array>;
+    const encoder = new TextEncoder();
+    const collaborator = createCollaborator({
+      request: async () =>
+        new Response(
+          new ReadableStream({
+            start(controller) {
+              stream = controller;
+            },
+          }),
+        ),
+      runCode: vi.fn(),
+      onPending: vi.fn(),
+      onError: vi.fn(),
+    });
+    const asking = collaborator.ask("Old question");
+    await vi.waitFor(() => expect(stream).toBeDefined());
+    stream.enqueue(
+      encoder.encode(
+        JSON.stringify({ type: "text", text: "Old partial response" }) + "\n",
+      ),
+    );
+    await vi.waitFor(() =>
+      expect(useWorkspace.getState().data.messages.at(-1)?.text).toBe(
+        "Old partial response",
+      ),
+    );
+    collaborator.clearHistory();
+    stream.enqueue(
+      encoder.encode(
+        JSON.stringify({ type: "text", text: "Late text" }) + "\n",
+      ),
+    );
+    stream.close();
+    await asking;
+    expect(useWorkspace.getState().data.messages).toEqual([]);
+    expect(useWorkspace.getState().jobId).toBeNull();
+  });
+
+  it("auto-applies validated edits with an undo record but does not authorize execution", async () => {
+    useWorkspace.setState({ autoApplyChanges: true });
+    const provider = providerCall("edit_code", {
+      baseRevision: 0,
+      replacements: [{ from: 0, to: 0, text: "# automatically applied\n" }],
+      summary: "Add explanation",
+    });
+    const onPending = vi.fn();
+    const runCode = vi.fn();
+    const collaborator = createCollaborator({
+      ...provider,
+      runCode,
+      onPending,
+      onError: vi.fn(),
+    });
+    const asking = collaborator.ask("Add a comment.");
+    await vi.waitFor(() =>
+      expect(useWorkspace.getState().data.changes).toHaveLength(1),
+    );
+    await asking;
+    expect(useWorkspace.getState().data.code.text).toMatch(
+      /^# automatically applied/,
+    );
+    expect(onPending.mock.calls.every(([value]) => value === null)).toBe(true);
+    expect(runCode).not.toHaveBeenCalled();
+  });
+
+  it("clearing chat cancels pending work and excludes old messages from the next request", async () => {
+    const provider = providerCall("edit_notes", {
+      baseRevision: 0,
+      replacements: [{ from: 0, to: 0, text: "Unwanted addition" }],
+      summary: "Add notes",
+    });
+    let pending: PendingChange | null = null;
+    const bodies: Array<{ messages: unknown[] }> = [];
+    const collaborator = createCollaborator({
+      request: async (input, init) => {
+        bodies.push(JSON.parse(String(init?.body)));
+        return provider.request(input, init);
+      },
+      runCode: vi.fn(),
+      onPending: (value) => {
+        pending = value;
+      },
+      onError: vi.fn(),
+    });
+    const before = useWorkspace.getState().data;
+    const asking = collaborator.ask("Old question");
+    await vi.waitFor(() => expect(pending).not.toBeNull());
+    collaborator.clearHistory();
+    await asking;
+    await collaborator.approve();
+    expect(useWorkspace.getState().data.messages).toEqual([]);
+    expect(useWorkspace.getState().data.notes).toEqual(before.notes);
+    expect(useWorkspace.getState().jobId).toBeNull();
+    expect(pending).toBeNull();
+    await collaborator.ask("Fresh question");
+    expect(bodies.at(-1)?.messages).toEqual([
+      { role: "user", text: "Fresh question" },
+    ]);
+  });
+
   it("never overwrites a manual edit made while a proposal waits for approval", async () => {
     const provider = providerCall("edit_code", {
       baseRevision: 0,
@@ -398,22 +524,20 @@ describe("client AI review lifecycle", () => {
   });
 
   it("keeps the initial context immutable when a later read adds a run reference", async () => {
-    useWorkspace
-      .getState()
-      .setData((data) => ({
-        ...data,
-        runs: [
-          {
-            id: "saved-run",
-            code: "print(1)",
-            revision: 0,
-            output: "1\n",
-            status: "success",
-            startedAt: 1,
-            durationMs: 1,
-          },
-        ],
-      }));
+    useWorkspace.getState().setData((data) => ({
+      ...data,
+      runs: [
+        {
+          id: "saved-run",
+          code: "print(1)",
+          revision: 0,
+          output: "1\n",
+          status: "success",
+          startedAt: 1,
+          durationMs: 1,
+        },
+      ],
+    }));
     const provider = providerCall("read_run", { id: "saved-run" });
     const contexts: unknown[] = [];
     const collaborator = createCollaborator({

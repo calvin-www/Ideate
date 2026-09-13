@@ -19,6 +19,7 @@ type ReviewPlan = (request: RequestBody) => {
   text: string;
   summary: string;
   target?: "notes" | "code" | "board";
+  additions?: Record<string, unknown>[];
 };
 
 const test = base.extend<{ applicationErrors: string[] }>({
@@ -62,7 +63,7 @@ async function fixtureReviews(page: Page, plans: ReviewPlan[]) {
         target === "board"
           ? {
               baseRevision: body.context.board.revision,
-              additions: [
+              additions: review.additions ?? [
                 {
                   type: "rectangle",
                   x: 80,
@@ -436,3 +437,127 @@ test("an AI board proposal renders a real preview, applies editable elements, an
   ).toBe(false);
   expect(undone.changes[0].undone).toBe(true);
 });
+
+for (const autoApply of [false, true]) {
+  test(`study partner pen strokes ${autoApply ? "auto-apply" : "respect review"}, survive reload, and undo`, async ({
+    page,
+  }, testInfo) => {
+    const drawing = () => ({
+      target: "board" as const,
+      text: "",
+      summary: "Draw a curve with the pen",
+      additions: [
+        {
+          type: "freedraw",
+          points: [
+            { x: 160, y: 220 },
+            { x: 180, y: 185 },
+            { x: 210, y: 160 },
+            { x: 250, y: 150 },
+            { x: 290, y: 160 },
+            { x: 320, y: 185 },
+            { x: 340, y: 220 },
+          ],
+          strokeColor: "#c92a2a",
+          strokeWidth: 3,
+        },
+      ],
+    });
+    const fixture = await fixtureReviews(
+      page,
+      autoApply ? [drawing] : [drawing, drawing],
+    );
+    await openJournal(page);
+    await page
+      .getByRole("navigation", { name: "Workspace tools" })
+      .getByRole("button", { name: "Whiteboard", exact: true })
+      .click();
+    const before = (await snapshot(page)).board.elements;
+    if (autoApply) {
+      await partner(page)
+        .getByRole("switch", { name: "Auto-apply changes" })
+        .check();
+      await partner(page)
+        .getByRole("textbox", { name: "Ask your study partner" })
+        .fill("Draw a curve using the pen.");
+      await partner(page)
+        .getByRole("button", { name: "Send message", exact: true })
+        .click();
+      await expect(
+        partner(page).getByText("Review recorded: accepted.", { exact: true }),
+      ).toBeVisible();
+      await expect(
+        partner(page).getByRole("button", { name: "Apply", exact: true }),
+      ).toHaveCount(0);
+    } else {
+      await askForReview(page, "Draw a curve using the pen.");
+      const preview = partner(page).getByRole("img", {
+        name: "Preview of the proposed whiteboard changes",
+      });
+      await expect(preview).toBeVisible();
+      await expect
+        .poll(() =>
+          preview.evaluate((image) => (image as HTMLImageElement).naturalWidth),
+        )
+        .toBeGreaterThan(0);
+      expect((await snapshot(page)).board.elements).toEqual(before);
+      await finishReview(page, "Reject");
+      expect((await snapshot(page)).board.elements).toEqual(before);
+      await askForReview(page, "Draw the pen curve again.");
+      await finishReview(page, "Apply");
+    }
+    await expect(
+      page.getByText("Saved locally", { exact: true }),
+    ).toBeVisible();
+    const applied = await snapshot(page);
+    expect(applied.changes).toHaveLength(1);
+    const stroke = applied.board.elements.find(
+      (element) => element.type === "freedraw" && !element.isDeleted,
+    );
+    expect(stroke).toMatchObject({
+      x: 160,
+      y: 220,
+      width: 180,
+      height: 70,
+      strokeColor: "#c92a2a",
+      strokeWidth: 3,
+      points: [
+        [0, 0],
+        [20, -35],
+        [50, -60],
+        [90, -70],
+        [130, -60],
+        [160, -35],
+        [180, 0],
+      ],
+    });
+    await page
+      .getByRole("button", { name: "Fit drawing", exact: true })
+      .click();
+    await page.screenshot({ path: testInfo.outputPath("pen-stroke.png") });
+    await expect(
+      page.getByText("Saved locally", { exact: true }),
+    ).toBeVisible();
+    await page.reload();
+    await expect(
+      page.getByText("Saved locally", { exact: true }),
+    ).toBeVisible();
+    expect((await snapshot(page)).board.elements).toEqual(
+      applied.board.elements,
+    );
+    await page
+      .getByRole("button", { name: "Toggle study partner", exact: true })
+      .click();
+    await partner(page)
+      .getByRole("button", { name: "Undo last AI change", exact: true })
+      .click();
+    const undone = await snapshot(page);
+    expect(
+      undone.board.elements.filter((element) => !element.isDeleted),
+    ).toEqual(before.filter((element) => !element.isDeleted));
+    expect(undone.changes[0].undone).toBe(true);
+    expect(fixture.results).toEqual(
+      autoApply ? ["accepted"] : ["rejected", "accepted"],
+    );
+  });
+}

@@ -16,9 +16,16 @@ import { SYSTEM_INSTRUCTION } from "./prompt";
 export type GenerateStream = (
   contents: Content[],
   signal: AbortSignal,
+  maxOutputTokens: number,
+  recovery?: boolean,
 ) => Promise<AsyncIterable<GenerateContentResponse>>;
 
-export const generateStream: GenerateStream = async (contents, signal) => {
+export const generateStream: GenerateStream = async (
+  contents,
+  signal,
+  maxOutputTokens,
+  recovery,
+) => {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey)
     throw new AiRequestError(
@@ -30,10 +37,14 @@ export const generateStream: GenerateStream = async (contents, signal) => {
     model: process.env.GEMINI_MODEL || "gemini-3.8-flash",
     contents,
     config: {
-      systemInstruction: SYSTEM_INSTRUCTION,
+      systemInstruction:
+        SYSTEM_INSTRUCTION +
+        (recovery
+          ? "\nThe last generation reached its output limit. Keep this step concise. Use a small, complete tool operation; leave additional operations for subsequent steps."
+          : ""),
       tools: [{ functionDeclarations }],
       automaticFunctionCalling: { disable: true },
-      maxOutputTokens: 4_096,
+      maxOutputTokens,
       candidateCount: 1,
       thinkingConfig: { includeThoughts: false },
       abortSignal: signal,

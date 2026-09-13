@@ -76,12 +76,30 @@ export class RunnerController {
         this.finish("cancelled", undefined, undefined, true);
       return;
     }
+    if (message.type === "resume") {
+      if (
+        !this.active?.paused ||
+        this.active.request.id !== message.id ||
+        this.active.pauseId !== message.pauseId
+      )
+        return;
+      this.active.paused = false;
+      this.active.resumedAt = Date.now();
+      this.status("running");
+      this.armTimeout();
+      this.worker.postMessage(message);
+      return;
+    }
     if (this.active) return;
     this.active = {
       request: { ...message },
       startedAt: null,
       bytes: 0,
       sequence: 0,
+      paused: false,
+      pauseId: 0,
+      elapsedMs: 0,
+      resumedAt: null,
     };
     if (!this.worker) this.start();
     if (this.ready) this.execute();
@@ -91,7 +109,14 @@ export class RunnerController {
     if (!this.active || !this.ready || this.active.startedAt !== null) return;
     clearTimeout(this.timer);
     this.active.startedAt = Date.now();
+    this.active.resumedAt = this.active.startedAt;
     this.status("running");
+    this.armTimeout();
+    this.worker.postMessage(this.active.request);
+  }
+
+  armTimeout() {
+    clearTimeout(this.timer);
     this.timer = setTimeout(
       () =>
         this.finish(
@@ -100,9 +125,22 @@ export class RunnerController {
           undefined,
           true,
         ),
+      Math.max(0, RUN_TIMEOUT_MS - this.active.elapsedMs),
+    );
+  }
+
+  armPauseWatchdog() {
+    clearTimeout(this.timer);
+    this.timer = setTimeout(
+      () =>
+        this.finish(
+          "timeout",
+          "Python stopped responding while debugging. Check for expensive work in background tasks.",
+          undefined,
+          true,
+        ),
       RUN_TIMEOUT_MS,
     );
-    this.worker.postMessage(this.active.request);
   }
 
   receive(message) {
@@ -132,7 +170,31 @@ export class RunnerController {
       this.active.startedAt === null
     )
       return;
-    if (message.type === "output") {
+    if (message.type === "heartbeat") {
+      // JSPI releases the worker event loop during a real inspection pause.
+      // Background Python work cannot evade the limit by blocking that loop.
+      if (this.active.paused) this.armPauseWatchdog();
+    } else if (message.type === "paused") {
+      if (
+        !this.active.request.debug ||
+        this.active.paused ||
+        message.pauseId !== this.active.pauseId + 1
+      )
+        return;
+      this.active.elapsedMs += Date.now() - this.active.resumedAt;
+      this.active.paused = true;
+      this.active.pauseId = message.pauseId;
+      this.armPauseWatchdog();
+      this.send({
+        ...envelope,
+        type: "paused",
+        id: message.id,
+        pauseId: message.pauseId,
+        line: message.line,
+        functionName: message.functionName,
+        locals: message.locals.map(({ name, value }) => ({ name, value })),
+      });
+    } else if (message.type === "output") {
       if (message.sequence !== this.active.sequence) return;
       this.active.sequence++;
       const remaining = MAX_OUTPUT_BYTES - this.active.bytes;
@@ -175,7 +237,11 @@ export class RunnerController {
       durationMs:
         active.startedAt === null
           ? 0
-          : Math.max(0, Date.now() - active.startedAt),
+          : Math.max(
+              0,
+              active.elapsedMs +
+                (active.paused ? 0 : Date.now() - active.resumedAt),
+            ),
       ...(error ? { error: trimUtf8(error, MAX_CHUNK_BYTES) } : {}),
       ...(line ? { line } : {}),
     });

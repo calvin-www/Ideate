@@ -1,0 +1,60 @@
+.overlay {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 5;
+  color: #245e48;
+}
+.box {
+  position: absolute;
+  border: 2px solid #398769;
+  border-radius: 4px;
+  background: rgb(86 169 126 / 13%);
+  box-shadow: 0 0 0 2px rgb(255 255 255 / 70%);
+}
+.pointer {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  filter: drop-shadow(0 1px 1px white);
+}
+.label {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(232px, calc(100% - 12px));
+  padding: 5px 7px 5px 10px;
+  border-radius: 6px;
+  background: #245e48;
+  color: white;
+  font:
+    500 12px/1.4 system-ui,
+    sans-serif;
+  box-shadow: 0 2px 7px rgb(26 57 44 / 15%);
+}
+.label span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.label button {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: white;
+  pointer-events: auto;
+}
+.label button:hover {
+  background: rgb(255 255 255 / 18%);
+}
+.label button:focus-visible {
+  outline: 2px solid white;
+  outline-offset: 1px;
+}

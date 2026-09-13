@@ -36,9 +36,16 @@ export function isParentMessage(message) {
   if (message.type === "init") return true;
   if (!validId(message.id)) return false;
   if (message.type === "stop") return true;
+  if (message.type === "resume")
+    return (
+      Number.isSafeInteger(message.pauseId) &&
+      message.pauseId > 0 &&
+      ["step", "continue"].includes(message.command)
+    );
   return (
     message.type === "run" &&
     boundedString(message.code, MAX_CODE_BYTES) &&
+    (message.debug === undefined || typeof message.debug === "boolean") &&
     (message.artifactId === undefined || validId(message.artifactId)) &&
     (message.sourceRevision === undefined ||
       (Number.isSafeInteger(message.sourceRevision) &&
@@ -56,6 +63,24 @@ export function isRunnerMessage(message) {
         boundedString(message.error, MAX_CHUNK_BYTES))
     );
   if (!validId(message.id)) return false;
+  if (message.type === "heartbeat") return true;
+  if (message.type === "paused")
+    return (
+      Number.isSafeInteger(message.pauseId) &&
+      message.pauseId > 0 &&
+      Number.isSafeInteger(message.line) &&
+      message.line > 0 &&
+      boundedString(message.functionName, 512) &&
+      Array.isArray(message.locals) &&
+      message.locals.length <= 25 &&
+      message.locals.every(
+        (item) =>
+          item &&
+          typeof item === "object" &&
+          boundedString(item.name, 320) &&
+          boundedString(item.value, 960),
+      )
+    );
   if (message.type === "output")
     return (
       Number.isSafeInteger(message.sequence) &&

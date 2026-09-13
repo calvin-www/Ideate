@@ -7,11 +7,12 @@ import {
   LoaderCircle,
   Sparkles,
   Square,
+  Trash2,
   Undo2,
   X,
 } from "lucide-react";
 import ReactMarkdown, { type Components } from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { mathRemarkPlugins, mathRehypePlugins } from "../markdown/math";
 import { diffLines } from "diff";
 import { useWorkspace } from "../workspace/store";
 import {
@@ -26,7 +27,10 @@ import {
 type Props = {
   collaborator: {
     ask: (prompt: string) => Promise<void>;
+    resume: () => Promise<void>;
+    paused: string;
     cancel: () => void;
+    clearHistory: () => void;
     pending: null | { proposal: Proposal; preview: string | BoardElement[] };
     approve: (runAfter?: boolean) => Promise<void>;
     reject: () => void;
@@ -35,6 +39,7 @@ type Props = {
   onReference: (id: string) => void;
 };
 function BoardPreview({ elements }: { elements: BoardElement[] }) {
+  const files = useWorkspace((s) => s.data.board.files);
   const [url, setUrl] = useState("");
   useEffect(() => {
     let disposed = false;
@@ -46,7 +51,9 @@ function BoardPreview({ elements }: { elements: BoardElement[] }) {
             typeof exportToBlob
           >[0]["elements"],
           appState: { exportBackground: true, viewBackgroundColor: "#fafaf7" },
-          files: {},
+          files: files as unknown as Parameters<
+            typeof exportToBlob
+          >[0]["files"],
           maxWidthOrHeight: 700,
         });
         if (!disposed) {
@@ -59,7 +66,7 @@ function BoardPreview({ elements }: { elements: BoardElement[] }) {
       disposed = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [elements]);
+  }, [elements, files]);
   return url ? (
     <img
       className="proposal-board-image"
@@ -89,7 +96,16 @@ export default function ChatPanel({ collaborator, onReference }: Props) {
     }),
     [onReference],
   );
-  const { data, activity, jobId, selection } = useWorkspace();
+  const {
+    data,
+    activity,
+    jobId,
+    selection,
+    attention,
+    autoApplyChanges,
+    setAutoApplyChanges,
+  } = useWorkspace();
+  const [confirmClear, setConfirmClear] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [undoError, setUndoError] = useState("");
   const [inverse, setInverse] = useState<{
@@ -98,6 +114,15 @@ export default function ChatPanel({ collaborator, onReference }: Props) {
     current: string | BoardElement[];
   } | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (
+      inverse &&
+      !data.changes.some((change) => change.id === inverse.change.id)
+    ) {
+      setInverse(null);
+      setUndoError("");
+    }
+  }, [data.changes, inverse]);
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: "nearest", behavior: "instant" });
   }, [data.messages, collaborator.pending, activity]);
@@ -132,6 +157,90 @@ export default function ChatPanel({ collaborator, onReference }: Props) {
           <X size={18} />
         </button>
       </header>
+      <div className="chat-settings">
+        <label title="Apply new AI changes automatically. You can undo them below. Running code still requires a request.">
+          <input
+            type="checkbox"
+            role="switch"
+            checked={autoApplyChanges}
+            onChange={(event) => setAutoApplyChanges(event.target.checked)}
+          />
+          Auto-apply changes
+        </label>
+        <button
+          type="button"
+          className="button quiet"
+          disabled={!data.messages.length && !jobId}
+          onClick={() => setConfirmClear(true)}
+        >
+          <Trash2 size={14} /> Clear chat
+        </button>
+      </div>
+      {confirmClear && (
+        <div
+          className="chat-clear-confirm"
+          role="group"
+          aria-label="Confirm clearing chat"
+        >
+          <p>
+            Clear this conversation? Any active reply will stop. Your board,
+            code, notes, and saved changes stay.
+          </p>
+          <div className="proposal-actions">
+            <button
+              type="button"
+              className="button"
+              onClick={() => {
+                collaborator.clearHistory();
+                setPrompt("");
+                setInverse(null);
+                setUndoError("");
+                setConfirmClear(false);
+              }}
+            >
+              Clear conversation
+            </button>
+            <button
+              type="button"
+              className="button quiet"
+              onClick={() => setConfirmClear(false)}
+            >
+              Keep chat
+            </button>
+          </div>
+        </div>
+      )}
+      {Object.keys(attention).length > 0 && (
+        <div className="attention-list" aria-label="Study partner cues">
+          {Object.values(attention).map((cue) => (
+            <div className="attention-item" key={cue.target}>
+              <button
+                type="button"
+                onClick={() => {
+                  const state = useWorkspace.getState();
+                  if (state.view !== cue.target) state.navigate(cue.target);
+                  useWorkspace.setState({
+                    attention: { ...state.attention, [cue.target]: { ...cue } },
+                  });
+                }}
+              >
+                <strong>Show in {toolNames[cue.target]}</strong>
+                <span>{cue.label}</span>
+              </button>
+              <button
+                type="button"
+                className="icon-button"
+                aria-label={`Clear ${cue.target} cue`}
+                onClick={() =>
+                  useWorkspace.getState().clearAttention(cue.target)
+                }
+              >
+                <X size={15} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="chat-scroll">
         {!data.messages.length && (
           <div className="chat-welcome">
@@ -162,10 +271,14 @@ export default function ChatPanel({ collaborator, onReference }: Props) {
             </span>
             <div className="markdown">
               <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
+                remarkPlugins={mathRemarkPlugins}
+                rehypePlugins={mathRehypePlugins}
                 components={markdownComponents}
               >
-                {message.text || "Thinking through your question…"}
+                {message.text ||
+                  (message.status === "paused"
+                    ? "Response paused."
+                    : "Thinking through your question…")}
               </ReactMarkdown>
             </div>
             {message.sources?.length ? (
@@ -296,7 +409,22 @@ export default function ChatPanel({ collaborator, onReference }: Props) {
             </div>
           </section>
         )}
-        {(collaborator.error || undoError) && (
+        {collaborator.paused && (
+          <div className="change-preview" role="status">
+            <p>{collaborator.paused}</p>
+            <button
+              type="button"
+              className="button"
+              disabled={!!jobId}
+              onClick={() => void collaborator.resume()}
+            >
+              Continue
+            </button>
+          </div>
+        )}
+        {(undoError ||
+          (collaborator.error &&
+            data.messages.at(-1)?.text !== collaborator.error)) && (
           <p className="inline-error" role="alert">
             {collaborator.error || undoError}
           </p>

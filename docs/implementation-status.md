@@ -5,11 +5,13 @@ Updated September 12, 2026. The user explicitly authorized implementation after 
 ## Delivered
 
 - **Functional study desk:** Three.js / React Three Fiber meshes for the whiteboard, computer, journal, and desk. Objects open full-size editors. Labels, keyboard-accessible navigation, reduced motion, current-content previews, and small-screen/WebGL fallbacks are present. The scene is unmounted while tools are visible.
-- **Whiteboard:** Excalidraw drawing, text, shapes, connectors, selection, native undo/redo, pan/zoom, Fit drawing, and a loadable binary-search diagram. Image/embedded-site content is outside the supported document model. AI changes use validated element operations, real label measurements, and reciprocal arrow bindings.
-- **Computer:** One Python file with CodeMirror highlighting, line numbers, search, undo/redo, Run/Stop, resizable output, stale-result labels, traceback line navigation, and download. Successful empty programs are distinct from failed runs. No terminal, REPL, debugger, packages, or interactive input.
-- **Journal:** Markdown editing and rendered preview with tables, lists, code blocks, download, and saved source links. Raw HTML does not execute.
+- **Whiteboard:** Excalidraw drawing, text, shapes, connectors, selection, native undo/redo, pan/zoom, Fit drawing, and a loadable binary-search diagram. PNG, JPEG, and WebP images support file drops, screenshot paste, and the image tool; binary data is saved locally, exported/imported, retained for undo, and included in board previews. Images are limited to 5 MB each and 10 MB of encoded data per board. Embedded websites and remote-image drags are unsupported. AI changes use validated element operations, real label measurements, and reciprocal arrow bindings.
+- **Computer:** One Python file with CodeMirror highlighting, line numbers, search, undo/redo, Run/Stop, resizable output, stale-result labels, traceback line navigation, and download. Debug pauses live execution before source lines, highlights the next line, and shows bounded local values. Step enters functions, Continue finishes the captured program, and Stop terminates a paused or busy worker. Source edits mark the debug snapshot stale. JSPI browser support is required for Debug; ordinary Run remains available without it. No terminal, REPL, package installer, or interactive input.
+- **Journal:** Markdown editing and rendered preview with tables, lists, code blocks, LaTeX math, download, and saved source links. Chat shares the math renderer. Dollar and LaTeX parenthesis/bracket delimiters preserve source positions; code spans stay literal. Raw HTML does not execute.
 - **Shared Gemini collaborator:** Immutable workspace/selection context, bounded reads, optional board image, streamed responses, text diffs, board previews, Apply/Reject, Apply & run, cancellation, revision checks, and undo. Conflicting undo shows the replaced content and requires an explicit restore; the restore is itself undoable.
 - **Persistence:** Browser-owned workspace in IndexedDB, serialized saves, schema checks before save/load, validated and normalized import, JSON export, and preserved historical run/source excerpts. Invalid saved data is retained for recovery instead of being overwritten by defaults.
+- **Study controls:** Remembered auto-apply preference (off by default), using the same validation and undo path as reviewed changes. Clear chat cancels active work and deletes persisted messages. A global clear-data dialog provides separate board/code/notes clears and a full reset with a table-flip animation, confirmation, export access, keyboard handling, and reduced-motion support. Cleared domains discard their undo stacks; a full reset removes artifacts and history and disables auto-apply.
+- **Teaching instructions:** Answer-first explanations, short paragraphs, defined terms and symbols, concrete examples, respectful corrections, and detail matched to the student's question. These are prompt policies; model responses remain probabilistic.
 - **Isolated Python:** Separate origin, restrictive CSP, message validation, a Worker per run, local Pyodide assets, ten-second execution and 64 KiB output limits, immediate initial trace output, and restart after completion/Stop/failure. No application secrets or workspace data enter the runner beyond the submitted code.
 
 ## Actual entry points
@@ -31,9 +33,22 @@ Updated September 12, 2026. The user explicitly authorized implementation after 
 
 The test suites use fixtures for deterministic Gemini behavior, real Pyodide for execution, and actual Excalidraw in isolated browser tests for diagram operations. They cover rejected/stale/duplicate/cancelled edits, immutable context, source provenance, safe restore, save ordering and recovery, invalid imports, runner isolation, output limits, timeouts, Stop/restart, and stream mutations between runs.
 
+Story-update regressions cover reviewed and automatic edits, clearing during active chat, math source offsets, per-domain and full resets, persisted empty workspaces, retained chat drafts, and reduced motion. Real Python tests cover stepping, top-level await, bounded inspection without user-defined display methods, and worker heartbeat timeouts when background native work blocks an inspected run. Browser tests exercise stale debug snapshots, the clear animation, and mobile controls.
+
 Browser verification covers the real binary-search target-16 result (index 4), target-17 result (not found), Python errors and source lines, empty code, infinite-loop Stop/restart, Markdown rendering, and board/code/note persistence after reload. The 390 × 844 layout was inspected: object cards and Python editing/output fit without horizontal page overflow. Hidden editors remain mounted and inert.
 
-The production build and typecheck have passed. Pinned dependency updates and overrides eliminated the advisories reported by the initial install; `npm audit` reports no known vulnerabilities at verification time. See the final handoff for the final suite counts after all review fixes.
+Final verification after review fixes and formatting:
+
+| Check                     | Result                                                        |
+| ------------------------- | ------------------------------------------------------------- |
+| `npm test`                | 133 tests passed in 16 suites                                 |
+| `npm run test:e2e`        | 19 tests passed against the optimized production server       |
+| `npm run typecheck`       | Passed, including route-type generation                       |
+| `npm run build`           | Passed                                                        |
+| `npm audit`               | No known vulnerabilities reported                             |
+| Desktop/mobile inspection | Rendered desk and tools checked at desktop size and 390 × 844 |
+
+Pinned dependency updates and overrides eliminated the advisories reported by the initial install. The audit describes the checked dependency set, not a guarantee against future advisories.
 
 ### Live Gemini evidence
 

@@ -98,6 +98,109 @@ async function connectedScene() {
 }
 
 describe("real Excalidraw board adapter", () => {
+  it("creates an editable pen stroke with derived geometry and preserves existing work", async () => {
+    const existing = await patch([], { additions: [shape] });
+    const result = await patch(existing, {
+      additions: [
+        {
+          type: "freedraw",
+          points: [
+            { x: 100, y: 100 },
+            { x: 80, y: 140 },
+            { x: 150, y: 120 },
+          ],
+          strokeColor: "#c92a2a",
+          strokeWidth: 3,
+        },
+      ],
+    });
+    expect(result[0]).toEqual(existing[0]);
+    expect(result).toHaveLength(2);
+    expect(result[1]).toMatchObject({
+      type: "freedraw",
+      x: 100,
+      y: 100,
+      width: 70,
+      height: 40,
+      points: [
+        [0, 0],
+        [-20, 40],
+        [50, 20],
+      ],
+      strokeColor: "#c92a2a",
+      strokeWidth: 3,
+      backgroundColor: "transparent",
+      pressures: [],
+      simulatePressure: true,
+      isDeleted: false,
+    });
+    expect(result[1].id).not.toBe(existing[0].id);
+  });
+
+  it("keeps horizontal and vertical pen strokes through import, move, and delete", async () => {
+    const elements = await patch([], {
+      additions: [
+        {
+          type: "freedraw",
+          points: [
+            { x: 10, y: 20 },
+            { x: 80, y: 20 },
+          ],
+        },
+        {
+          type: "freedraw",
+          points: [
+            { x: 90, y: 20 },
+            { x: 90, y: 90 },
+          ],
+        },
+      ],
+    });
+    expect(elements).toHaveLength(2);
+    expect(elements[0]).toMatchObject({ width: 70, height: 0 });
+    expect(elements[1]).toMatchObject({ width: 0, height: 70 });
+    const imported = await page.evaluate(async (elements) => {
+      const bridge = window as unknown as {
+        normalizeBoardImport: (
+          elements: BoardElement[],
+        ) => Promise<BoardElement[]>;
+      };
+      return bridge.normalizeBoardImport(elements);
+    }, elements);
+    expect(imported).toEqual(elements);
+    const moved = await patch(imported, {
+      updates: [{ id: elements[0].id, x: 50, strokeColor: "#ff0000" }],
+    });
+    expect(moved[0]).toMatchObject({
+      x: 50,
+      y: 20,
+      points: [
+        [0, 0],
+        [70, 0],
+      ],
+      strokeColor: "#ff0000",
+    });
+    expect(moved[1]).toEqual(elements[1]);
+    const deleted = await patch(moved, { deleteIds: [elements[0].id] });
+    expect(deleted[0].isDeleted).toBe(true);
+    expect(deleted[1]).toEqual(elements[1]);
+  });
+
+  it("validates pen geometry at the adapter boundary", async () => {
+    for (const points of [
+      [],
+      [{ x: 0, y: 0 }],
+      [
+        { x: 0, y: 0 },
+        { x: 10001, y: 0 },
+      ],
+    ]) {
+      await expect(
+        patch([], { additions: [{ type: "freedraw", points }] }),
+      ).rejects.toThrow();
+    }
+  });
+
   it("binds a new arrow to existing IDs in both directions without replacing the shapes", async () => {
     const elements = await connectedScene();
     const [start, end, arrow] = elements;
@@ -315,6 +418,54 @@ describe("real Excalidraw board adapter", () => {
     });
     expect(result[0].strokeColor).toBe("#ff0000");
     expect(result[1]).toEqual(elements[1]);
+  });
+
+  it("preserves image file references, flips, crops, and arrow bindings on import", async () => {
+    const image = {
+      id: "image-one",
+      type: "image",
+      fileId: "file-one",
+      status: "saved",
+      x: 10,
+      y: 20,
+      width: 100,
+      height: 80,
+      scale: [-1, 1],
+      crop: {
+        x: 5,
+        y: 10,
+        width: 100,
+        height: 80,
+        naturalWidth: 200,
+        naturalHeight: 160,
+      },
+      boundElements: [{ id: "arrow-one", type: "arrow" }],
+    };
+    const result = await page.evaluate(async (image) => {
+      const api = window as unknown as {
+        normalizeBoardImport: (
+          elements: BoardElement[],
+        ) => Promise<BoardElement[]>;
+      };
+      return api.normalizeBoardImport([
+        image,
+        {
+          id: "arrow-one",
+          type: "arrow",
+          x: 110,
+          y: 60,
+          width: 90,
+          height: 1,
+          points: [
+            [0, 0],
+            [90, 0],
+          ],
+          startBinding: { elementId: image.id, focus: 0, gap: 1 },
+        },
+      ]);
+    }, image);
+    expect(result[0]).toMatchObject(image);
+    expect(result[1].startBinding).toMatchObject({ elementId: image.id });
   });
 
   it("normalizes imported freehand strokes without losing their points or pressure", async () => {

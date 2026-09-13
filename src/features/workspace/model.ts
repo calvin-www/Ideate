@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  boardFilesSchema,
+  checkImageReferences,
+  type BoardFiles,
+} from "../board/images";
 
 export type Tool = "board" | "code" | "notes";
 export type View = Tool | "desk";
@@ -25,7 +30,12 @@ export type Run = {
   revision: number;
   output: string;
   status:
-    "running" | "success" | "error" | "cancelled" | "timeout" | "interrupted";
+    | "running"
+    | "success"
+    | "error"
+    | "cancelled"
+    | "timeout"
+    | "interrupted";
   startedAt: number;
   durationMs: number;
   error?: string;
@@ -75,6 +85,7 @@ export type Workspace = {
     id: "board";
     revision: number;
     elements: BoardElement[];
+    files: BoardFiles;
     viewport?: { scrollX: number; scrollY: number; zoom: number };
   };
   runs: Run[];
@@ -107,7 +118,7 @@ export function createWorkspace(): Workspace {
       revision: 0,
       text: "# Binary search\n\n## What I want to understand\n\nWhy is it safe to discard half the array?\n\n## Observations\n\nWrite down a prediction, then try it in Python.\n",
     },
-    board: { id: "board", revision: 0, elements: [] },
+    board: { id: "board", revision: 0, elements: [], files: {} },
     runs: [],
     messages: [],
     changes: [],
@@ -361,6 +372,7 @@ const elementSchema = z
       "freedraw",
       "frame",
       "magicframe",
+      "image",
     ]),
     x: z.number().finite(),
     y: z.number().finite(),
@@ -411,6 +423,25 @@ const elementSchema = z
     containerId: z.string().nullable().optional(),
     autoResize: z.boolean().optional(),
     name: z.string().nullable().optional(),
+    fileId: z.string().min(1).max(200).nullable().optional(),
+    status: z.enum(["pending", "saved", "error"]).optional(),
+    scale: z
+      .tuple([
+        z.union([z.literal(-1), z.literal(1)]),
+        z.union([z.literal(-1), z.literal(1)]),
+      ])
+      .optional(),
+    crop: z
+      .object({
+        x: z.number().finite().nonnegative(),
+        y: z.number().finite().nonnegative(),
+        width: z.number().finite().positive(),
+        height: z.number().finite().positive(),
+        naturalWidth: z.number().finite().positive(),
+        naturalHeight: z.number().finite().positive(),
+      })
+      .nullable()
+      .optional(),
   })
   .passthrough()
   .superRefine((element, ctx) => {
@@ -473,6 +504,7 @@ const workspaceSchema = z.object({
     id: z.literal("board"),
     revision: revisionSchema,
     elements: z.array(elementSchema).max(4000),
+    files: boardFilesSchema.default({}),
     viewport: z
       .object({
         scrollX: z.number(),
@@ -518,6 +550,7 @@ export function validateWorkspace(value: unknown): Workspace {
     data.board.elements.length
   )
     throw new Error("Drawing IDs must be unique.");
+  checkImageReferences(data.board.elements, data.board.files);
   for (const change of data.changes) {
     if (
       change.target === "board"
@@ -525,6 +558,10 @@ export function validateWorkspace(value: unknown): Workspace {
         : typeof change.before !== "string" || typeof change.after !== "string"
     )
       throw new Error("A change contains invalid document snapshots.");
+    if (change.target === "board") {
+      checkImageReferences(change.before as BoardElement[], data.board.files);
+      checkImageReferences(change.after as BoardElement[], data.board.files);
+    }
   }
   return data;
 }

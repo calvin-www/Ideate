@@ -16,6 +16,32 @@ const run = {
 };
 
 describe("isolated Python message protocol", () => {
+  it("bounds debugger snapshots and accepts only valid resume commands", () => {
+    const paused = {
+      ...run,
+      type: "paused",
+      pauseId: 1,
+      line: 1,
+      functionName: "main",
+      locals: [{ name: "value", value: "2" }],
+    };
+    expect(isRunnerMessage(paused)).toBe(true);
+    for (const invalid of [
+      { line: 0 },
+      { pauseId: NaN },
+      { locals: Array(26).fill({ name: "x", value: "1" }) },
+      { locals: [{ name: "x", value: "x".repeat(961) }] },
+    ])
+      expect(isRunnerMessage({ ...paused, ...invalid })).toBe(false);
+    expect(
+      isParentMessage({ ...run, type: "resume", pauseId: 1, command: "step" }),
+    ).toBe(true);
+    expect(
+      isParentMessage({ ...run, type: "resume", pauseId: 1, command: "eval" }),
+    ).toBe(false);
+    expect(isParentMessage({ ...run, debug: "yes" })).toBe(false);
+  });
+
   it("accepts only bounded run requests with an identifiable captured program", () => {
     expect(isParentMessage(run)).toBe(true);
     for (const message of [

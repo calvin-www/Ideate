@@ -4,22 +4,108 @@ import {
   Excalidraw,
   CaptureUpdateAction,
   exportToBlob,
+  restoreElements,
+  viewportCoordsToSceneCoords,
 } from "@excalidraw/excalidraw";
 import type {
   ExcalidrawImperativeAPI,
   NormalizedZoomValue,
+  BinaryFiles,
 } from "@excalidraw/excalidraw/types";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import { useWorkspace } from "../workspace/store";
 import { adapters } from "../workspace/adapters";
 import type { BoardElement } from "../workspace/model";
 import { sampleBoard } from "./adapter";
+import BoardAttention from "./BoardAttention";
+import {
+  captureBoardFiles,
+  checkImageReferences,
+  validateImageUpload,
+} from "./images";
+import { readBoardImage } from "./readImage";
 
 export default function BoardEditor({ active }: { active: boolean }) {
   const board = useWorkspace((s) => s.data.board);
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const hash = useRef("");
   const lastSelection = useRef("");
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  async function insertImages(
+    files: File[],
+    point?: { clientX: number; clientY: number },
+  ) {
+    if (!api) return;
+    const start = useWorkspace.getState();
+    for (const [index, file] of files.entries()) {
+      try {
+        const image = await readBoardImage(file);
+        const current = useWorkspace.getState();
+        if (
+          !mounted.current ||
+          current.data.id !== start.data.id ||
+          current.editorEpochs.board !== start.editorEpochs.board
+        )
+          return;
+        const state = api.getAppState();
+        const position = viewportCoordsToSceneCoords(
+          point ?? {
+            clientX: state.offsetLeft + state.width / 2,
+            clientY: state.offsetTop + state.height / 2,
+          },
+          state,
+        );
+        const scale = Math.min(1, 800 / image.width, 600 / image.height);
+        const width = image.width * scale,
+          height = image.height * scale;
+        const element = restoreElements(
+          [
+            {
+              id: crypto.randomUUID(),
+              type: "image",
+              fileId: image.file.id,
+              x: position.x - width / 2 + index * 24,
+              y: position.y - height / 2 + index * 24,
+              width,
+              height,
+              status: "saved",
+              scale: [1, 1],
+              crop: null,
+            },
+          ] as unknown as ExcalidrawElement[],
+          null,
+        )[0];
+        captureBoardFiles(
+          [element],
+          { [image.file.id]: image.file },
+          current.data.board.files,
+        );
+        api.addFiles([image.file] as unknown as Parameters<
+          typeof api.addFiles
+        >[0]);
+        api.updateScene({
+          elements: [...api.getSceneElementsIncludingDeleted(), element],
+          appState: { selectedElementIds: { [element.id]: true } },
+          captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+        });
+        api.setActiveTool({ type: "selection" });
+      } catch (error) {
+        if (mounted.current)
+          useWorkspace.setState({
+            notice:
+              error instanceof Error
+                ? error.message
+                : "This image could not be inserted.",
+          });
+      }
+    }
+  }
   useEffect(() => {
     if (!api) return;
     adapters.board = {
@@ -59,6 +145,13 @@ export default function BoardEditor({ active }: { active: boolean }) {
   useEffect(() => {
     if (!api) return;
     const value = JSON.stringify(board.elements);
+    const missingFiles = Object.values(board.files).filter(
+      (file) => api.getFiles()[file.id]?.dataURL !== file.dataURL,
+    );
+    if (missingFiles.length)
+      api.addFiles(
+        missingFiles as unknown as Parameters<typeof api.addFiles>[0],
+      );
     if (value !== hash.current) {
       hash.current = value;
       api.updateScene({
@@ -66,16 +159,23 @@ export default function BoardEditor({ active }: { active: boolean }) {
         captureUpdate: CaptureUpdateAction.IMMEDIATELY,
       });
     }
-  }, [board.elements, api]);
+  }, [board.elements, board.files, api]);
   useEffect(() => {
     if (active) {
       requestAnimationFrame(() => {
         api?.refresh();
       });
     } else if (api) {
+      const snapshot = useWorkspace.getState().data;
       adapters.board
         ?.image?.()
         .then((image) => {
+          const current = useWorkspace.getState().data;
+          if (
+            current.id !== snapshot.id ||
+            current.board.revision !== snapshot.board.revision
+          )
+            return;
           useWorkspace.setState({ boardPreview: image ?? "" });
         })
         .catch(() => {});
@@ -86,7 +186,7 @@ export default function BoardEditor({ active }: { active: boolean }) {
       <div className="editor-toolbar">
         <div>
           <strong>Your whiteboard</strong>
-          <span>Draw it. Question it. Make it click.</span>
+          <span>Draw, drop an image, or paste a screenshot.</span>
         </div>
         <button
           className="button quiet"
@@ -125,11 +225,61 @@ export default function BoardEditor({ active }: { active: boolean }) {
           Fit drawing
         </button>
       </div>
-      <div className="excalidraw-frame">
+      <div
+        className="excalidraw-frame"
+        onDropCapture={(event) => {
+          const files = Array.from(event.dataTransfer.files);
+          if (files.length) {
+            event.preventDefault();
+            event.stopPropagation();
+            void insertImages(files, {
+              clientX: event.clientX,
+              clientY: event.clientY,
+            });
+          } else if (
+            event.dataTransfer.types.some(
+              (type) =>
+                type === "text/uri-list" ||
+                type === "text/html" ||
+                type === "text/plain",
+            )
+          ) {
+            event.preventDefault();
+            event.stopPropagation();
+            useWorkspace.setState({
+              notice:
+                "Download the image, then drop the file onto the whiteboard.",
+            });
+          }
+        }}
+        onPasteCapture={(event) => {
+          if (
+            (event.target as HTMLElement).closest?.(
+              'input, textarea, [contenteditable="true"]',
+            )
+          )
+            return;
+          const files = Array.from(event.clipboardData.files);
+          if (files.length) {
+            event.preventDefault();
+            event.stopPropagation();
+            void insertImages(files);
+          } else if (/<img\b/i.test(event.clipboardData.getData("text/html"))) {
+            event.preventDefault();
+            event.stopPropagation();
+            useWorkspace.setState({
+              notice:
+                "Download the image, then drop the file onto the whiteboard.",
+            });
+          }
+        }}
+      >
         <Excalidraw
           excalidrawAPI={setApi}
+          validateEmbeddable={false}
           initialData={{
             elements: board.elements as unknown as ExcalidrawElement[],
+            files: board.files as unknown as BinaryFiles,
             appState: {
               viewBackgroundColor: "#fafaf7",
               currentItemStrokeColor: "#24342e",
@@ -154,31 +304,86 @@ export default function BoardEditor({ active }: { active: boolean }) {
               export: false,
               toggleTheme: false,
             },
-            tools: { image: false },
+            tools: { image: true },
+          }}
+          generateIdForFile={async (file) => {
+            validateImageUpload(file);
+            const digest = await crypto.subtle.digest(
+              "SHA-256",
+              await file.arrayBuffer(),
+            );
+            return Array.from(new Uint8Array(digest), (byte) =>
+              byte.toString(16).padStart(2, "0"),
+            ).join("");
           }}
           onPaste={(data) => {
-            if (
-              Object.keys(data.files ?? {}).length ||
-              data.elements?.some(
-                (e) => e.type === "image" || e.type === "embeddable",
-              ) ||
-              data.mixedContent?.some((e) => e.type === "imageUrl")
-            ) {
+            if (data.elements?.some((e) => e.type === "embeddable")) {
               useWorkspace.setState({
                 notice:
-                  "This whiteboard supports drawings, shapes, and text. Image and embedded-site pastes are not saved.",
+                  "Embedded websites are not supported on this whiteboard.",
+              });
+              return false;
+            }
+            try {
+              const elements = (data.elements ??
+                []) as unknown as BoardElement[];
+              const files = captureBoardFiles(
+                elements,
+                data.files ?? {},
+                useWorkspace.getState().data.board.files,
+              );
+              checkImageReferences(elements, files);
+            } catch (error) {
+              useWorkspace.setState({
+                notice:
+                  error instanceof Error
+                    ? error.message
+                    : "This image could not be pasted.",
               });
               return false;
             }
             return true;
           }}
-          onChange={(elements, appState) => {
+          onChange={(elements, appState, incomingFiles) => {
+            if (!mounted.current) return;
+            const saved = useWorkspace.getState().data.board;
+            let files;
+            try {
+              files = captureBoardFiles(
+                elements as unknown as BoardElement[],
+                incomingFiles,
+                saved.files,
+              );
+            } catch (error) {
+              // Reject the insertion before it can replace the last valid saved board.
+              useWorkspace.setState({
+                notice:
+                  error instanceof Error
+                    ? error.message
+                    : "This image could not be saved.",
+              });
+              api?.updateScene({
+                elements: saved.elements as unknown as ExcalidrawElement[],
+                captureUpdate: CaptureUpdateAction.NEVER,
+              });
+              return;
+            }
+            // Insertion emits a placeholder before its asynchronous file read completes.
+            const loadingImage = elements.some(
+              (element) =>
+                element.type === "image" &&
+                !element.isDeleted &&
+                (!element.fileId || !Object.hasOwn(files, element.fileId)),
+            );
             const value = JSON.stringify(elements);
-            if (value !== hash.current) {
+            if (
+              !loadingImage &&
+              (value !== hash.current || files !== saved.files)
+            ) {
               hash.current = value;
               useWorkspace
                 .getState()
-                .setBoard(elements as unknown as BoardElement[]);
+                .setBoard(elements as unknown as BoardElement[], files);
             }
             const ids = Object.keys(appState.selectedElementIds).filter(
               (id) => appState.selectedElementIds[id],
@@ -212,14 +417,13 @@ export default function BoardEditor({ active }: { active: boolean }) {
               old.scrollY !== viewport.scrollY ||
               old.zoom !== viewport.zoom
             )
-              useWorkspace
-                .getState()
-                .setData((data) => ({
-                  ...data,
-                  board: { ...data.board, viewport },
-                }));
+              useWorkspace.getState().setData((data) => ({
+                ...data,
+                board: { ...data.board, viewport },
+              }));
           }}
         />
+        {api && <BoardAttention api={api} active={active} />}
       </div>
     </div>
   );

@@ -24,6 +24,7 @@ import { useCollaborator } from "../ai/useCollaborator";
 import ChatPanel from "../ai/ChatPanel";
 import CodePanel from "../code/CodePanel";
 import NotePanel from "../notes/NotePanel";
+import WorkspaceDataControls from "./WorkspaceDataControls";
 
 const BoardEditor = dynamic(() => import("../board/BoardEditor"), {
   ssr: false,
@@ -86,6 +87,7 @@ export default function WorkspaceShell() {
     };
     const onKey = (event: KeyboardEvent) => {
       if (event.isComposing) return;
+      if (document.querySelector("dialog[open]")) return;
       const composer = (event.target as HTMLElement)?.closest(".chat-composer");
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
         event.preventDefault();
@@ -287,6 +289,21 @@ export default function WorkspaceShell() {
             <Sparkles size={16} />
             <span>Study partner</span>
           </button>
+          <WorkspaceDataControls
+            disabled={!hydrated}
+            onExport={exportWorkspace}
+            onClear={(scope) => {
+              if (scope === "all") collaborator.clearHistory();
+              else collaborator.cancel();
+              if (scope === "all" || scope === "code") execution.stopCode();
+              setSource(null);
+              useWorkspace.getState().clearData(scope);
+              if (scope !== "all")
+                useWorkspace.setState({
+                  notice: `${scope === "board" ? "Whiteboard" : scope === "code" ? "Python" : "Notes"} cleared.`,
+                });
+            }}
+          />
         </div>
       </header>
       <input
@@ -301,8 +318,9 @@ export default function WorkspaceShell() {
           try {
             if (file.size > 15_000_000)
               throw new Error("Workspace file exceeds 15 MB.");
-            const { prepareWorkspaceImport } =
-              await import("./importWorkspace");
+            const { prepareWorkspaceImport } = await import(
+              "./importWorkspace"
+            );
             const imported = await prepareWorkspaceImport(
               JSON.parse(await file.text()),
             );
@@ -316,6 +334,11 @@ export default function WorkspaceShell() {
             execution.stopCode();
             useWorkspace.setState({
               data: imported,
+              editorEpochs: {
+                ...useWorkspace.getState().editorEpochs,
+                board: useWorkspace.getState().editorEpochs.board + 1,
+              },
+              attention: {},
               selection: null,
               boardPreview: "",
               recoveryNeeded: false,
@@ -427,8 +450,8 @@ export default function WorkspaceShell() {
                   </div>
                   <div className="desk-footer">
                     <span>
-                      <span className="small-sun">✳</span>Choose an object. Your
-                      work stays right here.
+                      <span className="small-sun">✳</span>Choose an object.
+                      Your work stays right here.
                     </span>
                     <button
                       onClick={() => {
@@ -462,7 +485,10 @@ export default function WorkspaceShell() {
                   inert={view !== "board"}
                   aria-label="Whiteboard tool"
                 >
-                  <BoardEditor active={view === "board"} />
+                  <BoardEditor
+                    key={`${data.id}-${state.editorEpochs.board}`}
+                    active={view === "board"}
+                  />
                 </section>
               )}
               {visited.includes("code") && (
@@ -473,10 +499,14 @@ export default function WorkspaceShell() {
                   aria-label="Python tool"
                 >
                   <CodePanel
+                    key={`${data.id}-${state.editorEpochs.code}`}
                     active={view === "code"}
                     runCode={execution.runCode}
                     stopCode={execution.stopCode}
                     runtimeStatus={execution.runtimeStatus}
+                    debugCode={execution.debugCode}
+                    debugSession={execution.debugSession}
+                    resumeDebug={execution.resumeDebug}
                   />
                 </section>
               )}
@@ -488,6 +518,7 @@ export default function WorkspaceShell() {
                   aria-label="Notebook tool"
                 >
                   <NotePanel
+                    key={`${data.id}-${state.editorEpochs.notes}`}
                     active={view === "notes"}
                     onReference={openSource}
                   />
@@ -535,7 +566,11 @@ export default function WorkspaceShell() {
           )}
         </main>
         {chatOpen && (
-          <ChatPanel collaborator={collaborator} onReference={openSource} />
+          <ChatPanel
+            key={data.id}
+            collaborator={collaborator}
+            onReference={openSource}
+          />
         )}
       </div>
       <iframe

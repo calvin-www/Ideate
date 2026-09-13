@@ -12,7 +12,7 @@ The delivered collaborator uses Gemini through the server-side `@google/genai` S
 
 On September 12, 2026, the account preflight demonstrated streamed text, recognition of a blue square and orange circle, and a `read_code` function call followed by a response citing the supplied revision while preserving its opaque thought signature. Browser QA also received a live explanation. Subsequent requests intermittently returned provider HTTP 503, surfaced safely as a failed AI request; a live notes-proposal attempt also failed. Access and these examples are verified, but dependable capacity and the full binary-search teaching evaluation are not established.
 
-Generation uses `models.generateContentStream` with manual function handling. Each endpoint request produces one model step; the client owns the bounded tool loop. Final answers are streamed text, not a JSON-only response schema. Full candidate parts and thought signatures are preserved for tool continuation.
+Generation uses `models.generateContentStream` with manual function handling. Each endpoint request produces one logical model step, with bounded additional generations when an output cutoff can recover; the client owns the tool loop. Final answers are streamed text, not a JSON-only response schema. Full candidate parts and thought signatures are preserved for tool continuation.
 
 Astra's role is development assistance, including application work and static assets. It is not the required model inside Ideate. On-demand asset generation, a model picker, and a multi-provider routing system are outside the MVP.
 
@@ -23,6 +23,8 @@ Use Ideate's Python runner for program execution. Responses that claim a program
 These are system-prompt policies and product acceptance targets, rather than guarantees that every generated answer has been evaluated:
 
 - Start from the student's question, selection, and attempt.
+- Lead with the answer or next useful idea. Use short sentences and paragraphs, define unfamiliar terms and symbols, and ground explanations in a small example. Scale detail to the question, avoiding jargon, filler, repetition, and condescension.
+- Render mathematical notation with inline dollar delimiters or display equations, then explain its meaning in words. Chat and notes also support LaTeX parenthesis/bracket delimiters without changing source offsets.
 - Explain the relationship between representations: a diagram boundary, the code condition implementing it, and the run output demonstrating it.
 - Give a hint when asked, and provide a complete explanation or implementation when explicitly requested.
 - Offer a small prediction or experiment when useful, without requiring a quiz before answering.
@@ -60,6 +62,10 @@ Keep manual content and runtime output as data. Instructions embedded in a diagr
 
 ## Operations
 
+The partner can point to an existing board object or mark a Python/Markdown range while explaining it. `show_attention` takes `target`, exact `revision`, `mode` (`point` or `highlight`), and a short `label`. Board cues use 1–12 existing `ids`; text cues use UTF-16 `from`/`to` offsets. Highlights require a nonempty range. `clear_attention` removes one target's cue, or all cues when `target` is omitted. These visual tools require no edit review and never change artifact content or the student's selection.
+
+Cues follow board pan/zoom and editor scrolling. The current domain reveals the target, unfolding the relevant code when needed; other domains get a **Show** button in chat. Journal preview marks the containing rendered blocks, with a fallback to the source editor for content that has no rendered block. Each domain holds one cue, so the partner can connect ideas across the board, code, and notes. Students can dismiss any cue. Cues are transient: they clear on a new question, cancellation, failure, workspace replacement, or a change to their target. They are excluded from saved/exported workspaces. Python run output is not a cue target.
+
 All operations identify their target explicitly. The model requests operations; application adapters perform them. Validate schema, allowed fields, identifiers, payload limits, and current state independently of model output.
 
 | Operation        | Inputs                                                                 | Result or effect                                                                                                      |
@@ -76,7 +82,7 @@ All operations identify their target explicitly. The model requests operations; 
 
 Artifact targets are implicit in each tool name because this version has one board, one Python document, and one notes document. The provider argument schema does not contain a job ID, expected source text, filename, or source hash. The client adds job/operation identity and source-revision guards before staging a proposal. Python execution captures the exact current source and revision in the browser; no source hash is computed.
 
-Board additions support rectangle, ellipse, diamond, text, and arrow, with required geometry and optional text/start/end IDs. Updates are limited to existing IDs and text, color, or position fields. The adapter supplies Excalidraw metadata, validates geometry and bindings, and maintains bound labels and arrows. Arbitrary executable drawing code, embedded frames, and whole-scene model replacement are not accepted.
+Board additions support rectangle, ellipse, diamond, text, and arrow, with required geometry and optional text/start/end IDs. The study partner can also use the pen with `{type: "freedraw", points: [{x, y}, ...], strokeColor?, strokeWidth?}`. Each stroke has 2–512 ordered absolute board coordinates, spans at most 10,000 units per axis, and becomes a native editable Excalidraw element. Its origin and dimensions are derived from the points; no separate x/y/width/height fields are accepted. Optional color uses three- or six-digit hex, and width is 0.5–10 (default 2). Separate additions create separate strokes; repeating the first point closes a loop. Strokes use the same preview, approval/auto-apply, revision checks, undo, and persistence as other board edits. Updates are limited to existing IDs and text, color, or position fields. The adapter supplies Excalidraw metadata, validates geometry and bindings, and maintains bound labels and arrows. Arbitrary executable drawing code, embedded frames, and whole-scene model replacement are not accepted.
 
 Code and notes use UTF-16 offsets relative to `baseRevision` and replacement text. Invalid or overlapping ranges are rejected. Whole-document revision comparison is the concurrency guard; there is no additional expected-text/hash check, automatic range rebasing, merge, or CRDT.
 
@@ -84,19 +90,29 @@ User Run and Apply & Run actions authorize their exact run. The AI can run code 
 
 ## Proposal and job lifecycle
 
-An AI job proceeds through reading, generating, awaiting review, applying or executing, and completion. Rejected/conflicted operations are returned to Gemini; messages record working, complete, failed, cancelled, or interrupted state. Activity and pending review live in the client controller. There is no separate durable job table, and provider continuation is not persisted across reload.
+An AI job proceeds through reading, generating, awaiting review, applying or executing, and completion. Rejected/conflicted operations are returned to Gemini; messages record working, paused, complete, failed, cancelled, or interrupted state. Activity, paused continuation, and pending review live in the client controller. There is no separate durable job table, and provider continuation is not persisted across reload.
 
 1. Capture the student's request, context references, and a unique job ID.
 2. Send the bounded workspace overview, current instruction, and declared operation set.
 3. Execute validated reads and return their results.
-4. Receive a proposed change; validate it and show a text diff or board preview.
-5. On Apply, recheck current revisions and job state.
+4. Receive and validate a proposed change. Show a text diff or board preview when auto-apply is off; otherwise proceed through the same application checks automatically.
+5. Immediately before applying, recheck current revisions and job state.
 6. Apply one accepted artifact edit, increment its revision, and record its change set and source links.
 7. Return the actual application result to the model before it reports success or continues.
 
 For code, Apply & Run combines acceptance of the displayed patch with execution of the resulting snapshot. Reject leaves the artifact unchanged. A multi-tool task is a sequence of named steps so partial completion is understandable.
 
-Use one active AI job and sequential mutations. Start with a maximum of eight model/tool rounds per user request; if unfinished, report progress and offer continuation. This is a cost and reliability limit, not a user-facing reasoning ritual.
+Auto-apply defaults off and is saved as a browser preference, separate from imported workspace content. It affects new proposals; toggling it does not apply an already pending review. It never bypasses revision validation, duplicate-operation checks, undo recording, or explicit execution authorization. Tool results report acceptance before the model can claim success.
+
+Clear chat aborts the active job and rejects late stream updates before emptying the persisted message history. Documents, executions, references used in notes, and accepted-change history remain. The next request contains no old conversation messages. Domain clearing also cancels active AI work and discards the affected editor's undo history; a full workspace clear removes all conversation and artifact history.
+
+Use one active AI job and sequential mutations. Each budget permits up to eight model/tool rounds. The server defaults to 16,384 output tokens per generation and 32,768 across a user request, including thinking, retries, and tool rounds. `AI_MAX_OUTPUT_TOKENS` and `AI_MAX_JOB_OUTPUT_TOKENS` configure those limits. Every call reserves the smaller of the per-generation cap and the remaining budget before contacting Gemini. A completed `STOP` response with valid cumulative output/thinking usage refunds unused tokens; cutoffs, missing usage, cancellation, and provider errors retain the full reservation. Input tokens are separate from this output budget.
+
+At `MAX_TOKENS`, text-only output can continue with its original provider parts and signatures. Incomplete tool attempts are discarded, including their displayed text, and regenerated as smaller operations; no calls are released without an explicit `STOP` and successful validation. Up to two automatic recoveries are allowed across the budget, including the existing initial 503 retry. All attempts within an HTTP request share its 55-second deadline. Deadline and transport failures still stop with a preserved partial answer.
+
+Budget and round exhaustion produce a paused response. **Continue** explicitly grants another bounded budget using the saved provider state; it does not replay completed operations. The client retains the same answer, splitting very long answers into bounded message records to remain compatible with workspace persistence. Clear chat, cancellation, or a new question discards the resume action; changed artifacts require a new request with fresh context.
+
+Server checkpoints are opaque, single-use tokens bound to the original messages, context, and provider history. They expire after 30 minutes and store only hashes and budget counters in a bounded process-local map. Missing, altered, replayed, or expired checkpoints fail closed. Resume state is not persisted across browser reloads, and a server restart or routing to another process invalidates checkpoints. Multi-replica hosting requires replacing this map with a shared atomic store before continuations can work across replicas. Completion logs contain the model, finish reason, token counts, allowance, remaining budget, and recovery count, without workspace text or credentials.
 
 ## Manual edits, stale responses, and duplication
 
@@ -137,7 +153,7 @@ Initial context and read results supply exact reference IDs. Gemini can include 
 
 Stream available response text and show actual operation status. Keep manual tools usable if Gemini fails. Offer cancellation/retry for slow responses and preserve already accepted work after an error. Retries begin with current revisions.
 
-`POST /api/ai` accepts `{messages, context, continuation?, toolResults?}` and emits newline-delimited `text`, `call`, `done`, or `error` events. A `done` event carries `{continuation:{contents}}`; resumed calls must supply matching tool results. Request/schema/access failures before streaming have HTTP error statuses. Failures after output begins produce an error event without a fabricated done event. The client displays the server's controlled error message, capped at 500 characters, so context and output limits remain distinguishable from upstream failures. Raw provider exceptions and credentials are not returned.
+`POST /api/ai` accepts `{messages, context, continuation?, toolResults?, resume?}` and emits newline-delimited `text`, `replace`, `status`, `call`, `done`, `paused`, or `error` events. A tool-bearing `done` event carries `{continuation:{contents,token}}`; the next tool round supplies that checkpoint with matching tool results. `replace` replaces only text from the current HTTP step when a truncated tool attempt is discarded. `paused` carries `{message,resume:{contents,token,append}}`; only the explicit Continue action submits `resume`, without `continuation` or `toolResults`. The server validates and consumes its checkpoint before granting a fresh budget. Request/schema/access failures before streaming have HTTP error statuses. Failures after output begins produce an error event without a fabricated done event. The client displays the server's controlled error message, capped at 500 characters, without duplicating an identical error in both the message and the banner. Raw provider exceptions and credentials are not returned.
 
 The local server enforces matching origin, bounded JSON depth/size, a process-local 36-requests-per-minute limit, and deadlines. An actual provider HTTP 503 before any stream chunk gets one retry after a cancellable 750 ms delay within the same 55-second deadline. Rate limits, local configuration errors, and partial streams are not automatically retried. A new user request starts from current workspace revisions. The local setup has no public authentication, distributed rate limiter, or account spending cap.
 

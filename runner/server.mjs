@@ -19,6 +19,7 @@ const runnerAssets = [
   "protocol.mjs",
   "worker.mjs",
   "python-runtime.mjs",
+  "debugger.mjs",
 ];
 const mimeTypes = {
   ".mjs": "text/javascript; charset=utf-8",

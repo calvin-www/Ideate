@@ -1,7 +1,13 @@
-import { randomUUID } from "node:crypto";
+﻿import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import type { Content, GenerateContentResponse, Part } from "@google/genai";
 import { buildContents, generateStream, type GenerateStream } from "./provider";
+import {
+  createBudgetStore,
+  generationLimits,
+  newBudget,
+  type GenerationLimits,
+} from "./budget";
 import { validateToolCall } from "./tools";
 import {
   AiRequestError,
@@ -13,6 +19,7 @@ import {
 } from "./validation";
 
 const localLimiter = createRateLimiter();
+const localBudgets = createBudgetStore();
 const headers = {
   "Cache-Control": "no-store",
   "X-Content-Type-Options": "nosniff",
@@ -20,13 +27,29 @@ const headers = {
 type Dependencies = {
   generate?: GenerateStream;
   limiter?: ReturnType<typeof createRateLimiter>;
+  budgets?: ReturnType<typeof createBudgetStore>;
+  limits?: GenerationLimits;
 };
+const continueInstruction =
+  "Continue the unfinished answer exactly where it stopped. Do not repeat previous text or restart an open code block. Finish the current explanation concisely.";
+
+function checkContinuation(contents: Content[]) {
+  if (
+    contents.length > 32 ||
+    Buffer.byteLength(JSON.stringify(contents)) > MAX_CONTINUATION_BYTES
+  )
+    throw new AiRequestError(
+      413,
+      "This conversation step is too large. Start a smaller request.",
+    );
+}
 
 export async function handleAiRequest(
   request: Request,
   dependencies: Dependencies = {},
 ): Promise<Response> {
   const controller = new AbortController();
+  // All recovery attempts share this deadline; none gets a fresh timeout.
   const signal = AbortSignal.any([
     request.signal,
     controller.signal,
@@ -42,33 +65,72 @@ export async function handleAiRequest(
       );
     const body = await readAiRequest(request);
     signal.throwIfAborted();
-    const contents = buildContents(body);
-    // Receive the first chunk before HTTP headers, so upstream access/rate
-    // failures have meaningful HTTP statuses. Retry only a transient provider
-    // 503 before any chunk; replaying an existing stream could duplicate work.
-    let first: IteratorResult<GenerateContentResponse>;
-    for (let attempt = 0; ; attempt++) {
-      try {
-        signal.throwIfAborted();
-        const provider = await (dependencies.generate ?? generateStream)(
-          contents,
-          signal,
-        );
-        iterator = provider[Symbol.asyncIterator]();
-        first = await iterator.next();
-        break;
-      } catch (error) {
-        const status = (error as { status?: number } | null)?.status;
-        if (
-          attempt !== 0 ||
-          status !== 503 ||
-          error instanceof AiRequestError ||
-          signal.aborted
-        )
-          throw error;
-        await iterator?.return?.().catch(() => undefined);
-        iterator = undefined;
-        await delay(750, undefined, { signal });
+    const budgets = dependencies.budgets ?? localBudgets;
+    const identity = { messages: body.messages, context: body.context };
+    const fingerprint = (contents: Content[], append?: boolean) => ({
+      ...identity,
+      contents,
+      ...(append === undefined ? {} : { append }),
+    });
+    let budget = newBudget(dependencies.limits ?? generationLimits());
+    if (body.continuation)
+      budget = budgets.take(
+        "tool",
+        body.continuation.token,
+        fingerprint(body.continuation.contents as Content[]),
+      );
+    if (body.resume) {
+      const prior = budgets.take(
+        "resume",
+        body.resume.token,
+        fingerprint(body.resume.contents as Content[], body.resume.append),
+      );
+      budget = newBudget(prior);
+    }
+    let contents = body.resume
+      ? (body.resume.contents as Content[])
+      : buildContents(body);
+    let append = body.resume?.append ?? false;
+    let allowance = 0;
+    const openGeneration = async (recovery = false) => {
+      signal.throwIfAborted();
+      allowance = Math.min(budget.generation, budget.remaining);
+      // Reserve before contacting Gemini. Missing usage, errors, and cancellation
+      // keep the reservation; an unknown charge never creates more budget.
+      budget.remaining -= allowance;
+      const provider = await (dependencies.generate ?? generateStream)(
+        contents,
+        signal,
+        allowance,
+        recovery,
+      );
+      iterator = provider[Symbol.asyncIterator]();
+      return iterator.next();
+    };
+    let first: IteratorResult<GenerateContentResponse> | undefined;
+    if (budget.remaining > 0 && budget.rounds < 8) {
+      budget.rounds++;
+      // Preserve meaningful HTTP errors before streaming. Even this transient
+      // retry consumes the same job budget and recovery count.
+      for (let attempt = 0; ; attempt++) {
+        try {
+          first = await openGeneration(attempt > 0);
+          break;
+        } catch (error) {
+          if (
+            attempt !== 0 ||
+            (error as { status?: number } | null)?.status !== 503 ||
+            error instanceof AiRequestError ||
+            signal.aborted ||
+            budget.remaining <= 0 ||
+            budget.recovered >= budget.recoveries
+          )
+            throw error;
+          budget.recovered++;
+          await iterator?.return?.().catch(() => undefined);
+          iterator = undefined;
+          await delay(750, undefined, { signal });
+        }
       }
     }
     signal.throwIfAborted();
@@ -81,86 +143,172 @@ export async function handleAiRequest(
           if (!cancelled)
             output.enqueue(encoder.encode(JSON.stringify(event) + "\n"));
         };
-        const parts: Part[] = [];
-        let finishReason: string | undefined;
+        const pause = () => {
+          checkContinuation(contents);
+          const token = budgets.issue(
+            "resume",
+            fingerprint(contents, append),
+            budget,
+          );
+          emit({
+            type: "paused",
+            message:
+              "Paused at this request's limit. Continue when you're ready.",
+            resume: { contents, token, append },
+          });
+        };
+        let visibleText = "";
         let outputBytes = 0;
         try {
-          let item = first;
-          while (!item.done) {
-            signal.throwIfAborted();
-            const chunk = item.value;
-            if (chunk.promptFeedback?.blockReason)
-              throw new AiRequestError(
-                422,
-                "Gemini could not respond to this request. Try rephrasing it.",
-              );
-            const candidate = chunk.candidates?.[0];
-            if (candidate?.finishReason) finishReason = candidate.finishReason;
-            for (const part of candidate?.content?.parts ?? []) {
-              // Never reconstruct a function-call part: thought signatures and
-              // adjacent provider parts must survive the next tool round.
-              parts.push(part);
-              outputBytes += Buffer.byteLength(JSON.stringify(part));
-              if (outputBytes > 512 * 1024 || parts.length > 1_024)
-                throw new AiRequestError(
-                  502,
-                  "Gemini returned too much data. Try a smaller request.",
-                );
-              if (part.text && !part.thought)
-                emit({ type: "text", text: part.text });
-            }
-            item = await iterator!.next();
+          if (!first) {
+            pause();
+            return;
           }
-          signal.throwIfAborted();
-          if (finishReason && finishReason !== "STOP")
-            throw new AiRequestError(
-              502,
-              finishReason === "MAX_TOKENS"
-                ? "The answer reached its length limit. Try a smaller step."
-                : "Gemini could not finish this response. Try rephrasing the request.",
-            );
-          if (
-            !parts.some(
-              (part) => (part.text && !part.thought) || part.functionCall,
+          let item = first;
+          while (true) {
+            const parts: Part[] = [];
+            let finishReason: string | undefined;
+            let usage: GenerateContentResponse["usageMetadata"];
+            const beforeAttempt = visibleText;
+            while (!item.done) {
+              signal.throwIfAborted();
+              const chunk = item.value;
+              if (chunk.usageMetadata) usage = chunk.usageMetadata;
+              if (chunk.promptFeedback?.blockReason)
+                throw new AiRequestError(
+                  422,
+                  "Gemini could not respond to this request. Try rephrasing it.",
+                );
+              const candidate = chunk.candidates?.[0];
+              if (candidate?.finishReason)
+                finishReason = candidate.finishReason;
+              for (const part of candidate?.content?.parts ?? []) {
+                // Preserve provider parts and opaque signatures without merging.
+                parts.push(part);
+                outputBytes += Buffer.byteLength(JSON.stringify(part));
+                if (outputBytes > 512 * 1024 || parts.length > 1_024)
+                  throw new AiRequestError(
+                    502,
+                    "Gemini returned too much data. Try a smaller request.",
+                  );
+                if (part.text && !part.thought) {
+                  visibleText += part.text;
+                  emit({ type: "text", text: part.text });
+                }
+              }
+              item = await iterator!.next();
+            }
+            signal.throwIfAborted();
+            // Stream metadata is cumulative, not a delta. Only a completed STOP
+            // with valid usage can refund the unused part of the reservation.
+            const generated = usage?.candidatesTokenCount;
+            const thoughts = usage?.thoughtsTokenCount ?? 0;
+            if (
+              finishReason === "STOP" &&
+              Number.isSafeInteger(generated) &&
+              generated! >= 0 &&
+              Number.isSafeInteger(thoughts) &&
+              thoughts >= 0
             )
-          )
-            throw new AiRequestError(
-              502,
-              "Gemini returned an empty response. Please try again.",
+              budget.remaining += Math.max(
+                0,
+                allowance - generated! - thoughts,
+              );
+            if (!dependencies.generate)
+              console.info("[ai-usage]", {
+                model: process.env.GEMINI_MODEL || "gemini-3.8-flash",
+                finishReason,
+                allowance,
+                outputTokens: generated,
+                thinkingTokens: usage?.thoughtsTokenCount,
+                remaining: budget.remaining,
+                recoveries: budget.recovered,
+              });
+
+            const calls = parts.flatMap((part) =>
+              part.functionCall ? [part.functionCall] : [],
             );
-          const calls = parts.flatMap((part) =>
-            part.functionCall ? [part.functionCall] : [],
-          );
-          if (calls.length > 12)
-            throw new AiRequestError(
-              502,
-              "Gemini requested too many operations. Try a smaller step.",
-            );
-          const validatedCalls = calls.map((call) => {
-            const args = validateToolCall(call.name ?? "", call.args ?? {});
-            if (!args)
+            if (finishReason === "MAX_TOKENS") {
+              if (calls.length === 0 && visibleText !== beforeAttempt) {
+                contents = [
+                  ...contents,
+                  { role: "model", parts },
+                  { role: "user", parts: [{ text: continueInstruction }] },
+                ];
+                append = true;
+              } else {
+                // An incomplete tool attempt is regenerated, never stitched or
+                // applied. Roll back only its displayed text, not earlier work.
+                if (visibleText !== beforeAttempt)
+                  emit({ type: "replace", text: beforeAttempt });
+                visibleText = beforeAttempt;
+              }
+              checkContinuation(contents);
+              if (
+                budget.remaining <= 0 ||
+                budget.recovered >= budget.recoveries
+              ) {
+                pause();
+                return;
+              }
+              budget.recovered++;
+              emit({ type: "status", message: "Continuing the response…" });
+              await iterator?.return?.().catch(() => undefined);
+              iterator = undefined;
+              item = await openGeneration(true);
+              continue;
+            }
+            if (finishReason !== "STOP")
               throw new AiRequestError(
                 502,
-                "Gemini proposed an invalid operation. No change was applied; please try again.",
+                "Gemini could not finish this response. Try rephrasing the request.",
               );
-            return {
-              type: "call",
-              id: call.id ?? randomUUID(),
-              name: call.name!,
-              args,
-            };
-          });
-          const continued: Content[] = [...contents, { role: "model", parts }];
-          if (
-            Buffer.byteLength(JSON.stringify(continued)) >
-            MAX_CONTINUATION_BYTES
-          )
-            throw new AiRequestError(
-              413,
-              "This conversation step is too large. Start a smaller request.",
-            );
-          for (const call of validatedCalls) emit(call);
-          emit({ type: "done", continuation: { contents: continued } });
+            if (
+              !parts.some(
+                (part) => (part.text && !part.thought) || part.functionCall,
+              )
+            )
+              throw new AiRequestError(
+                502,
+                "Gemini returned an empty response. Please try again.",
+              );
+            if (calls.length > 12)
+              throw new AiRequestError(
+                502,
+                "Gemini requested too many operations. Try a smaller step.",
+              );
+            const validatedCalls = calls.map((call) => {
+              const args = validateToolCall(call.name ?? "", call.args ?? {});
+              if (!args)
+                throw new AiRequestError(
+                  502,
+                  "Gemini proposed an invalid operation. No change was applied; please try again.",
+                );
+              return {
+                type: "call",
+                id: call.id ?? randomUUID(),
+                name: call.name!,
+                args,
+              };
+            });
+            const continued: Content[] = [
+              ...contents,
+              { role: "model", parts },
+            ];
+            checkContinuation(continued);
+            const token = calls.length
+              ? budgets.issue("tool", fingerprint(continued), budget)
+              : undefined;
+            for (const call of validatedCalls) emit(call);
+            emit({
+              type: "done",
+              continuation: {
+                contents: continued,
+                ...(token ? { token } : {}),
+              },
+            });
+            return;
+          }
         } catch (error) {
           if (!cancelled) {
             const mapped = mapAiError(signal.aborted ? signal.reason : error);

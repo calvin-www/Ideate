@@ -10,6 +10,7 @@
 }
 .panel[hidden],
 .edit[hidden],
+.previewSurface[hidden],
 .preview[hidden] {
   display: none;
 }
@@ -98,6 +99,13 @@
 }
 .edit > div {
   height: 100%;
+}
+.previewSurface {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 .preview {
   flex: 1;

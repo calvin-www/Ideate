@@ -4,6 +4,7 @@ import {
   MAX_CHUNK_BYTES,
   MAX_OUTPUT_BYTES,
 } from "./protocol.mjs";
+import { DEBUG_RUNNER } from "./debugger.mjs";
 
 const INPUT_SETUP = `
 import builtins as _runner_builtins
@@ -35,9 +36,11 @@ def _ideate_capture_streams():
 _ideate_capture_streams()
 `);
   pyodide.globals.delete("_ideate_capture_streams");
+  const debugRun = pyodide.runPython(DEBUG_RUNNER);
+  pyodide.globals.delete("_ideate_make_debug_runner");
 
   return {
-    async execute(request, onOutput, onLimit = () => {}) {
+    async execute(request, onOutput, onLimit = () => {}, onPause) {
       const startedAt = Date.now();
       resetStreams();
       const decoders = { stdout: new TextDecoder(), stderr: new TextDecoder() };
@@ -110,10 +113,21 @@ _ideate_capture_streams()
       let result = { status: "success" };
       try {
         pyodide.runPython(INPUT_SETUP, { globals });
-        await pyodide.runPythonAsync(request.code, {
-          globals,
-          filename: "main.py",
-        });
+        if (request.debug) {
+          if (typeof WebAssembly.Suspending !== "function" || !onPause)
+            throw new Error(
+              "Debugging needs a browser with WebAssembly JSPI support, such as current Chrome or Edge. Run Python is still available.",
+            );
+          await debugRun.callPromising(request.code, globals, (snapshot) => {
+            flush();
+            return onPause(JSON.parse(snapshot));
+          });
+        } else {
+          await pyodide.runPythonAsync(request.code, {
+            globals,
+            filename: "main.py",
+          });
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         const matches = [...message.matchAll(/File "main\.py", line (\d+)/g)];

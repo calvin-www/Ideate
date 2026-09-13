@@ -73,7 +73,17 @@ const requestSchema = z.strictObject({
     .max(8),
   context: jsonRecord,
   continuation: z
-    .strictObject({ contents: z.array(contentSchema).min(1).max(32) })
+    .strictObject({
+      contents: z.array(contentSchema).min(1).max(32),
+      token: id.optional(),
+    })
+    .optional(),
+  resume: z
+    .strictObject({
+      contents: z.array(contentSchema).min(1).max(32),
+      token: id,
+      append: z.boolean(),
+    })
     .optional(),
   toolResults: z
     .array(
@@ -141,6 +151,12 @@ export function parseAiRequest(value: unknown): AiRequest {
       "The AI request is invalid. Refresh the context and try again.",
     );
   const body = parsed.data;
+  if (body.resume && (body.continuation || body.toolResults))
+    throw new AiRequestError(
+      400,
+      "A resumed response cannot also submit tool results.",
+    );
+  if (body.resume) checkJson(body.resume, MAX_CONTINUATION_BYTES);
   const { boardImage, ...textContext } = body.context;
   checkJson(textContext, MAX_CONTEXT_BYTES);
   parseBoardImage(boardImage);

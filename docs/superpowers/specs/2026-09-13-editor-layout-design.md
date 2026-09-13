@@ -1,0 +1,11 @@
+# Optional editor layouts
+
+Approved in the conversation: the existing desk, navigation, single-editor view, and optional Study Partner sidebar remain the default. Editors can optionally be split horizontally or vertically, rearranged into tab groups, resized, or floated above another editor. A floating Python editor contains the existing editor, execution controls, and output. Maximize fills the editor workspace; restore recovers the previous layout including floating bounds. Separate browser popouts are a follow-up.
+
+Use Dockview for docking, tab groups, split resizing, and floating windows. Keep editor React trees in stable portal containers outside Dockview's component lifecycle, so rebuilding a layout never resets editor undo/history. Keep the Python runner and collaborator at shell scope. A small layout controller owns arrangement, commands, visibility, and saved layout; document content remains in the existing workspace store. Focus and visibility are distinct: several tools can be visible, one is the current tool for shortcuts and AI context.
+
+The Layout menu offers split beside/below, float an editor, restore saved arrangement, single-editor view, and reset. Group controls expose float/dock, maximize, and hide. Hidden editors retain data. Navigation focuses or reopens a tool. Closing the final editor returns to the default view. Advanced layouts are restored from a versioned local preference with validation and safe fallback; transient maximization is not persisted. Narrow viewports use the single-editor view without overwriting the desktop arrangement. Floating bounds stay within the workspace.
+
+Match the existing sage/cream colors, compact system typography, thin separators, and quiet buttons. Only advanced layouts show docking headers; the default view keeps its existing toolbars.
+
+Verify real editors through Playwright: original defaults, split visibility and resizing, drag/tab rearrangement, floating movement, maximize/restore geometry, undo across transitions, running Python across transitions, saving/reloading arrangements, malformed storage, keyboard commands, and narrow screens. Run the existing unit suite, typecheck, production build, and relevant editor regressions.

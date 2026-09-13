@@ -1,5 +1,6 @@
 import type { BoardElement, BoardPatch } from "../workspace/model";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
+import { freehandSkeleton } from "./freehand";
 
 type Binding = { elementId: string; [key: string]: unknown };
 type BoundElement = { id: string; type: "arrow" | "text" };
@@ -71,6 +72,7 @@ function repairRelationships(elements: BoardElement[]) {
             "text",
             "frame",
             "magicframe",
+            "image",
           ].includes(target.type) ||
           (target.type === "text" && target.containerId)
         )
@@ -105,7 +107,7 @@ function repairRelationships(elements: BoardElement[]) {
 }
 
 const snapshotFields = new Set(
-  `id type x y width height angle strokeColor backgroundColor fillStyle strokeWidth strokeStyle roundness roughness opacity seed version versionNonce index isDeleted groupIds frameId boundElements updated link locked text originalText fontSize fontFamily textAlign verticalAlign containerId autoResize lineHeight points pressures simulatePressure startBinding endBinding startArrowhead endArrowhead elbowed fixedSegments startIsSpecial endIsSpecial name`.split(
+  `id type x y width height angle strokeColor backgroundColor fillStyle strokeWidth strokeStyle roundness roughness opacity seed version versionNonce index isDeleted groupIds frameId boundElements updated link locked text originalText fontSize fontFamily textAlign verticalAlign containerId autoResize lineHeight points pressures simulatePressure startBinding endBinding startArrowhead endArrowhead elbowed fixedSegments startIsSpecial endIsSpecial name fileId status scale crop`.split(
     " ",
   ),
 );
@@ -384,6 +386,14 @@ export async function buildBoardPatch(
     return { id: element.id, x: element.x, y: element.y };
   }
   const skeletons = additions.map((item, index) => {
+    const id = `ai-${crypto.randomUUID()}-${index}`;
+    if (item.type === "freedraw") {
+      // Conversion passes freedraw through unchanged, so restore its metadata first.
+      return restoreElements(
+        [freehandSkeleton(item, id)] as unknown as ExcalidrawElement[],
+        null,
+      )[0];
+    }
     if (!allowedTypes.has(String(item.type)))
       throw new Error("Unsupported diagram element.");
     const x = position(item.x),
@@ -391,7 +401,6 @@ export async function buildBoardPatch(
       width = dimension(item.width),
       height = dimension(item.height);
     const text = item.text === undefined ? undefined : textValue(item.text);
-    const id = `ai-${crypto.randomUUID()}-${index}`;
     const base = {
       id,
       type: item.type,

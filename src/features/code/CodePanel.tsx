@@ -6,7 +6,9 @@ import {
   useState,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { Download, FileCode2, Play, Square, Trash2 } from "lucide-react";
+import { Bug, Download, FileCode2, Play, Square, Trash2 } from "lucide-react";
+import type { DebugSession } from "../execution/useExecution";
+import DebugPanel from "./DebugPanel";
 import TextEditor from "../workspace/TextEditor";
 import { adapters } from "../workspace/adapters";
 import type { Run } from "../workspace/model";
@@ -18,6 +20,9 @@ export interface CodePanelProps {
   runCode: () => Promise<Run>;
   stopCode: () => void;
   runtimeStatus: string;
+  debugCode: () => Promise<Run>;
+  debugSession: DebugSession | null;
+  resumeDebug: (command: "step" | "continue") => void;
 }
 
 const RUN_LABELS: Record<Run["status"], string> = {
@@ -45,6 +50,9 @@ export default function CodePanel({
   runCode,
   stopCode,
   runtimeStatus,
+  debugCode,
+  debugSession,
+  resumeDebug,
 }: CodePanelProps) {
   const code = useWorkspace((state) => state.data.code);
   const runs = useWorkspace((state) => state.data.runs);
@@ -66,11 +74,11 @@ export default function CodePanel({
 
   useEffect(() => () => stopDragging.current?.(), []);
 
-  async function startRun() {
+  async function startRun(debug = false) {
     setRequestError("");
     setStarting(true);
     try {
-      await runCode();
+      await (debug ? debugCode() : runCode());
     } catch (error) {
       setRequestError(
         error instanceof Error
@@ -158,9 +166,11 @@ export default function CodePanel({
       : "Loading Python…"
     : runtimeStatus === "error"
       ? "Python unavailable"
-      : running
-        ? "Python is running"
-        : "Python ready";
+      : runtimeStatus === "paused"
+        ? "Python paused"
+        : running
+          ? "Python is running"
+          : "Python ready";
 
   return (
     <section
@@ -202,16 +212,27 @@ export default function CodePanel({
               Stop
             </button>
           ) : (
-            <button
-              type="button"
-              className={styles.runButton}
-              onClick={() => void startRun()}
-              disabled={preparing}
-              title="Run Python (Ctrl or Command + Enter)"
-            >
-              <Play size={14} fill="currentColor" aria-hidden="true" />
-              {preparing ? "Getting ready" : "Run Python"}
-            </button>
+            <>
+              <button
+                type="button"
+                className="button"
+                onClick={() => void startRun(true)}
+                disabled={preparing}
+                title="Pause before each Python line and inspect variables"
+              >
+                <Bug size={14} /> Debug
+              </button>
+              <button
+                type="button"
+                className={styles.runButton}
+                onClick={() => void startRun()}
+                disabled={preparing}
+                title="Run Python (Ctrl or Command + Enter)"
+              >
+                <Play size={14} fill="currentColor" aria-hidden="true" />
+                {preparing ? "Getting ready" : "Run Python"}
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -221,8 +242,23 @@ export default function CodePanel({
         </div>
       )}
       <div className={styles.source}>
-        <TextEditor target="code" active={active} />
+        <TextEditor
+          target="code"
+          active={active}
+          executionLine={
+            debugSession?.revision === code.revision
+              ? debugSession.pause?.line
+              : undefined
+          }
+        />
       </div>
+      {debugSession && (
+        <DebugPanel
+          session={debugSession}
+          stale={debugSession.revision !== code.revision}
+          onResume={resumeDebug}
+        />
+      )}
       <div
         className={styles.divider}
         role="separator"
@@ -263,7 +299,9 @@ export default function CodePanel({
                 className={`${styles.runStatus} ${run.status === "error" || run.status === "timeout" ? styles.errorStatus : ""}`}
                 role="status"
               >
-                {RUN_LABELS[run.status]}
+                {debugSession?.pause && run.status === "running"
+                  ? "Paused"
+                  : RUN_LABELS[run.status]}
                 {run.status === "success" && run.durationMs > 0
                   ? ` in ${run.durationMs < 1000 ? `${Math.round(run.durationMs)} ms` : `${(run.durationMs / 1000).toFixed(1)} s`}`
                   : ""}
@@ -318,7 +356,11 @@ export default function CodePanel({
                 </p>
               )}
               {run.status === "running" && !run.output && (
-                <p className={styles.emptyResult}>Running your Python…</p>
+                <p className={styles.emptyResult}>
+                  {debugSession?.pause
+                    ? "Paused. Step or Continue to execute the next line."
+                    : "Running your Python…"}
+                </p>
               )}
               {run.status === "cancelled" && (
                 <p className={styles.emptyResult}>

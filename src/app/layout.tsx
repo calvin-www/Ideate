@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "@excalidraw/excalidraw/index.css";
+import "katex/dist/katex.min.css";
 import "./globals.css";
 export const metadata: Metadata = {
   title: "Ideate — a space to understand",

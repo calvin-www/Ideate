@@ -35,6 +35,90 @@ function setup() {
 afterEach(() => vi.useRealTimers());
 
 describe("runner lifecycle", () => {
+  it("pauses the execution budget and resumes only the current debugger pause", () => {
+    vi.useFakeTimers();
+    const { workers, events, controller } = setup();
+    workers[0].emit({ type: "status", status: "ready" });
+    controller.handle({
+      ...envelope,
+      type: "run",
+      id: "debug-1",
+      code: "x = 1",
+      debug: true,
+    });
+    vi.advanceTimersByTime(2000);
+    workers[0].emit({
+      type: "paused",
+      id: "debug-1",
+      pauseId: 1,
+      line: 1,
+      functionName: "<module>",
+      locals: [{ name: "x", value: "1", extra: "not forwarded" }],
+      extra: "not forwarded",
+    });
+    for (let second = 0; second < 60; second++) {
+      vi.advanceTimersByTime(1000);
+      workers[0].emit({ type: "heartbeat", id: "debug-1" });
+    }
+    expect(events.some((event) => event.type === "complete")).toBe(false);
+    expect(events.at(-1)).toMatchObject({ type: "paused", line: 1 });
+    expect(events.at(-1)).not.toHaveProperty("extra");
+    expect(events.at(-1)?.locals).toEqual([{ name: "x", value: "1" }]);
+    controller.handle({
+      ...envelope,
+      type: "resume",
+      id: "debug-1",
+      pauseId: 0,
+      command: "step",
+    });
+    expect(workers[0].sent).toHaveLength(1);
+    controller.handle({
+      ...envelope,
+      type: "resume",
+      id: "debug-1",
+      pauseId: 1,
+      command: "continue",
+    });
+    expect(workers[0].sent.at(-1)).toMatchObject({
+      type: "resume",
+      command: "continue",
+    });
+    vi.advanceTimersByTime(8000);
+    expect(events.find((event) => event.type === "complete")).toMatchObject({
+      status: "timeout",
+      durationMs: 10_000,
+    });
+    controller.dispose();
+  });
+
+  it("terminates a paused worker if background Python blocks its event loop", () => {
+    vi.useFakeTimers();
+    const { workers, events, controller } = setup();
+    workers[0].emit({ type: "status", status: "ready" });
+    controller.handle({
+      ...envelope,
+      type: "run",
+      id: "debug-busy",
+      code: "x = 1",
+      debug: true,
+    });
+    workers[0].emit({
+      type: "paused",
+      id: "debug-busy",
+      pauseId: 1,
+      line: 1,
+      functionName: "<module>",
+      locals: [],
+    });
+    vi.advanceTimersByTime(10_000);
+    expect(events.find((event) => event.type === "complete")).toMatchObject({
+      status: "timeout",
+      error: expect.stringContaining("stopped responding"),
+    });
+    expect(workers[0].terminated).toBe(true);
+    controller.dispose();
+  });
+
   it("queues a captured run during initialization and starts its limit only when ready", () => {
     vi.useFakeTimers();
     const { workers, events, controller } = setup();
