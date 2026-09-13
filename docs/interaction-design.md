@@ -10,11 +10,11 @@ Navigation has five states: desk, opening a tool, active tool, switching tools, 
 
 Use a small, warm study space with simplified geometry: muted wood, cream paper, dark hardware, and pine-green accents for AI activity. The implementation uses primitive meshes. A whole explorable room is outside the MVP.
 
-| Object | Placement | Click target | Content preview |
-| --- | --- | --- | --- |
-| Whiteboard | Back-left, angled toward the user | The entire board surface | Current board thumbnail; element count as the basic fallback |
-| Computer | Back-center | Monitor and keyboard both open Code | Filename, short code excerpt, and latest run status |
-| Journal | Front-right, visibly open | Either page | Current heading and a few lines of notes |
+| Object     | Placement                         | Click target                        | Content preview                                              |
+| ---------- | --------------------------------- | ----------------------------------- | ------------------------------------------------------------ |
+| Whiteboard | Back-left, angled toward the user | The entire board surface            | Current board thumbnail; element count as the basic fallback |
+| Computer   | Back-center                       | Monitor and keyboard both open Code | Filename, short code excerpt, and latest run status          |
+| Journal    | Front-right, visibly open         | Either page                         | Current heading and a few lines of notes                     |
 
 Use a fixed, slightly elevated perspective camera that shows all three objects at once. Do not require orbiting, walking, dragging the room, or precise mesh selection.
 
@@ -80,13 +80,13 @@ Provide Apply/Reject for proposals, Apply & Run for code, Stop for an active AI 
 
 ## Keyboard and focus
 
-| Action | Initial shortcut or behavior |
-| --- | --- |
-| Run Python | Ctrl/Cmd+Enter when Code is active and focus is outside the chat composer |
-| Flush local save | Ctrl/Cmd+S within the workspace |
-| Switch to Board / Code / Notes | Alt+1 / Alt+2 / Alt+3; user configuration is not implemented |
-| Escape | Close a source dialog or focused chat composer; otherwise return to desk outside Excalidraw's own controls and consumed editor commands |
-| Navigate objects | Ordinary Tab order through named DOM buttons; Enter/Space opens the tool |
+| Action                         | Initial shortcut or behavior                                                                                                            |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Run Python                     | Ctrl/Cmd+Enter when Code is active and focus is outside the chat composer                                                               |
+| Flush local save               | Ctrl/Cmd+S within the workspace                                                                                                         |
+| Switch to Board / Code / Notes | Alt+1 / Alt+2 / Alt+3; user configuration is not implemented                                                                            |
+| Escape                         | Close a source dialog or focused chat composer; otherwise return to desk outside Excalidraw's own controls and consumed editor commands |
+| Navigate objects               | Ordinary Tab order through named DOM buttons; Enter/Space opens the tool                                                                |
 
 Scope handlers so chat, Excalidraw, editor commands, browser shortcuts, and text composition do not conflict. Expose visible alternatives to every shortcut.
 

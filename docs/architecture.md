@@ -8,17 +8,17 @@ Deliver one persistent study workspace whose tools remain usable independently o
 
 ## Stack
 
-| Concern | Choice | Reason |
-| --- | --- | --- |
-| Application | Next.js App Router, React, TypeScript | One application and a server endpoint for model requests |
-| Desk | Three.js through React Three Fiber, minimal Drei helpers | Declarative scene integration and on-demand rendering |
-| Whiteboard | Excalidraw | Existing drawing, diagramming, selection, and scene APIs |
-| Code and note editing | CodeMirror 6 | Text transactions, selections, history, and language extensions |
-| Markdown preview | react-markdown and remark-gfm | Markdown rendering with raw HTML disabled |
-| Workspace state | Zustand plus explicit editor adapters | Shared artifact ownership above navigation |
-| Persistence | IndexedDB with a versioned storage adapter | Local documents, run snapshots, and exportable workspace state |
-| Product AI | Gemini through the server-side @google/genai SDK | Shared multimodal context and function calls |
-| Python | Pyodide in a dedicated Worker behind a separate-origin runner bridge | Browser execution without blocking editor interaction |
+| Concern               | Choice                                                               | Reason                                                          |
+| --------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------- |
+| Application           | Next.js App Router, React, TypeScript                                | One application and a server endpoint for model requests        |
+| Desk                  | Three.js through React Three Fiber, minimal Drei helpers             | Declarative scene integration and on-demand rendering           |
+| Whiteboard            | Excalidraw                                                           | Existing drawing, diagramming, selection, and scene APIs        |
+| Code and note editing | CodeMirror 6                                                         | Text transactions, selections, history, and language extensions |
+| Markdown preview      | react-markdown and remark-gfm                                        | Markdown rendering with raw HTML disabled                       |
+| Workspace state       | Zustand plus explicit editor adapters                                | Shared artifact ownership above navigation                      |
+| Persistence           | IndexedDB with a versioned storage adapter                           | Local documents, run snapshots, and exportable workspace state  |
+| Product AI            | Gemini through the server-side @google/genai SDK                     | Shared multimodal context and function calls                    |
+| Python                | Pyodide in a dedicated Worker behind a separate-origin runner bridge | Browser execution without blocking editor interaction           |
 
 The installed versions are pinned in [package.json](../package.json) and [package-lock.json](../package-lock.json). These files are the version authority; the stack table records why the components were chosen.
 
@@ -71,17 +71,17 @@ A process-local limiter allows 36 requests per minute across this local instance
 
 The version-1 workspace is saved through a serialized IndexedDB write queue after a 450 ms debounce. Saves validate a cloned snapshot before writing, so an older write cannot finish after a newer queued write or knowingly save data that reload would reject. Editors wait for hydration.
 
-| State | Change tool / return to desk | Browser reload |
-| --- | --- | --- |
-| Board, code, and notes | Retained | Restored from local storage |
-| Cursor and text scroll | Retained in mounted editors; shared context selection clears on navigation | Start fresh |
-| Board viewport | Retained | Restored from saved viewport |
-| Editor undo history | Retained during the session | May start fresh |
-| Conversation and accepted changes | Retained | Restored |
-| Completed run output and source snapshot | Retained | Restored |
-| Active Python run | Continues unless stopped | Mark interrupted; do not imply it resumed |
-| Pending AI request | Continues unless cancelled | Mark interrupted; never replay a write automatically |
-| Python globals, imports, module mutations, and streams | Fresh Worker after every run | Not restored |
+| State                                                  | Change tool / return to desk                                               | Browser reload                                       |
+| ------------------------------------------------------ | -------------------------------------------------------------------------- | ---------------------------------------------------- |
+| Board, code, and notes                                 | Retained                                                                   | Restored from local storage                          |
+| Cursor and text scroll                                 | Retained in mounted editors; shared context selection clears on navigation | Start fresh                                          |
+| Board viewport                                         | Retained                                                                   | Restored from saved viewport                         |
+| Editor undo history                                    | Retained during the session                                                | May start fresh                                      |
+| Conversation and accepted changes                      | Retained                                                                   | Restored                                             |
+| Completed run output and source snapshot               | Retained                                                                   | Restored                                             |
+| Active Python run                                      | Continues unless stopped                                                   | Mark interrupted; do not imply it resumed            |
+| Pending AI request                                     | Continues unless cancelled                                                 | Mark interrupted; never replay a write automatically |
+| Python globals, imports, module mutations, and streams | Fresh Worker after every run                                               | Not restored                                         |
 
 The UI shows Saving, Saved locally, and save errors. Failed writes retain in-memory work and offer export/retry. An unreadable or invalid stored workspace enters recovery mode: the existing saved value is preserved, automatic writes are disabled, and the user can download the saved recovery copy or import a valid replacement. A failed write is not reported as saved.
 
@@ -105,12 +105,12 @@ This is a constrained local browser runner for study examples, not a general mul
 
 ### Run contract
 
-| Message | Required information |
-| --- | --- |
-| Run request | `protocol: ideate-python`, `version: 1`, `type: run`, unique `id`, exact `code` |
-| Output event | Run ID, sequence number, stdout/stderr channel, bounded plain-text chunk |
-| Completion | Run ID, status, elapsed time, optional error string and `main.py` line |
-| Stop request | Run ID to terminate |
+| Message      | Required information                                                            |
+| ------------ | ------------------------------------------------------------------------------- |
+| Run request  | `protocol: ideate-python`, `version: 1`, `type: run`, unique `id`, exact `code` |
+| Output event | Run ID, sequence number, stdout/stderr channel, bounded plain-text chunk        |
+| Completion   | Run ID, status, elapsed time, optional error string and `main.py` line          |
+| Stop request | Run ID to terminate                                                             |
 
 Only one program runs at a time. The bridge schema accepts optional artifact/revision/hash metadata, but the current caller sends the run ID and exact source text; the browser's saved `Run` records the code revision. No source hash is computed or stored. Execution uses the fixed filename `main.py` for traceback lines.
 
@@ -130,17 +130,17 @@ Graceful interrupts using shared memory are unnecessary for the first version. W
 
 All identifiers are stable within the workspace. Artifact revisions increase monotonically for manual edits, accepted AI edits, and undo operations. Selection and camera movement do not change a document revision.
 
-| Entity | Fields and responsibility |
-| --- | --- |
-| Workspace | `id`, `schemaVersion: 1`, title, board/code/notes, runs, messages, changes, references, accepted operation IDs, `updatedAt`; active tool/preferences are transient store state |
-| BoardDocument | `id`, `revision`, Excalidraw elements with stable IDs, saved viewport |
-| CodeDocument | `id: code`, `revision`, `text`; `main.py` is a UI/runtime constant, not a stored filename field |
-| NoteDocument | `id: notes`, `revision`, `text`; download filename is a UI constant |
-| ArtifactRef | Unique reference `id`, `tool`, revision, label, saved excerpt, optional board IDs, UTF-16 range, or `runId` |
-| ExecutionRun (`Run`) | `id`, exact `code`, revision, combined output, status, start time, duration, optional error/line; no hash |
-| ConversationMessage | `id`, role, text, optional sources/status; job ID and provider continuation remain transient in the client controller |
-| ChangeSet (`Change`) | Operation `id`, target, summary, full before/after snapshots, result revision, sources, optional undone flag; no persisted job/message ID or separate forward/inverse patch |
-| Proposal | Transient operation `id`, `jobId`, target, base revision, typed patch, summary, sources, source revision guards |
+| Entity               | Fields and responsibility                                                                                                                                                      |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Workspace            | `id`, `schemaVersion: 1`, title, board/code/notes, runs, messages, changes, references, accepted operation IDs, `updatedAt`; active tool/preferences are transient store state |
+| BoardDocument        | `id`, `revision`, Excalidraw elements with stable IDs, saved viewport                                                                                                          |
+| CodeDocument         | `id: code`, `revision`, `text`; `main.py` is a UI/runtime constant, not a stored filename field                                                                                |
+| NoteDocument         | `id: notes`, `revision`, `text`; download filename is a UI constant                                                                                                            |
+| ArtifactRef          | Unique reference `id`, `tool`, revision, label, saved excerpt, optional board IDs, UTF-16 range, or `runId`                                                                    |
+| ExecutionRun (`Run`) | `id`, exact `code`, revision, combined output, status, start time, duration, optional error/line; no hash                                                                      |
+| ConversationMessage  | `id`, role, text, optional sources/status; job ID and provider continuation remain transient in the client controller                                                          |
+| ChangeSet (`Change`) | Operation `id`, target, summary, full before/after snapshots, result revision, sources, optional undone flag; no persisted job/message ID or separate forward/inverse patch    |
+| Proposal             | Transient operation `id`, `jobId`, target, base revision, typed patch, summary, sources, source revision guards                                                                |
 
 An `ArtifactRef` locator identifies board element IDs, a revision-bound text range, or a run/output range. Text offsets never silently carry across unrelated revisions. Board references use stable IDs; deleted elements resolve to their saved excerpt or an unavailable-source indicator.
 
@@ -156,14 +156,14 @@ The repository has automated coverage for the boundaries below, including real P
 
 The following remain acceptance criteria to preserve as the implementation changes, not a claim that every UX scenario has been exhaustively evaluated:
 
-| Boundary | Experiment and pass condition |
-| --- | --- |
-| Excalidraw and workspace | Create selected connected shapes, apply an annotation, undo, hide/show, and preserve bindings and content |
-| Immediate capture and persistence | Type/draw and immediately switch; reload after save; retain the final edit |
+| Boundary                                | Experiment and pass condition                                                                              |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Excalidraw and workspace                | Create selected connected shapes, apply an annotation, undo, hide/show, and preserve bindings and content  |
+| Immediate capture and persistence       | Type/draw and immediately switch; reload after save; retain the final edit                                 |
 | Editor transactions and revision checks | Return a proposal based on revision N after a manual edit to N+1; reject it without modifying the document |
-| Worker and browser | Print, raise an error, loop forever, stop, and run again while navigation remains responsive |
-| Runner origin | Demonstrate that executed code cannot access application storage, credentials, or workspace operations |
-| Model and client state | Apply a proposal only once; cancellation and delayed provider responses cannot produce a late edit |
-| Scene and editors | Repeatedly switch views on the demonstration laptop with correct focus and pointer coordinates |
+| Worker and browser                      | Print, raise an error, loop forever, stop, and run again while navigation remains responsive               |
+| Runner origin                           | Demonstrate that executed code cannot access application storage, credentials, or workspace operations     |
+| Model and client state                  | Apply a proposal only once; cancellation and delayed provider responses cannot produce a late edit         |
+| Scene and editors                       | Repeatedly switch views on the demonstration laptop with correct focus and pointer coordinates             |
 
 See [decisions and sources](decisions-and-sources.md) for the documentation supporting these choices.

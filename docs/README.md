@@ -8,14 +8,14 @@ Ideate is a 3D study desk for understanding algorithms through drawing, Python e
 
 ## Reading order
 
-| Document | Purpose |
-| --- | --- |
-| [Implementation status](implementation-status.md) | What is built, how to run it, and verification evidence |
-| [Product](product.md) | Audience, learning workflow, scope, and product success criteria |
-| [Interaction design](interaction-design.md) | Desk layout, tool interfaces, navigation, accessibility, and previews |
-| [Architecture](architecture.md) | Stack, state ownership, persistence, Python isolation, and data model |
-| [AI collaboration](ai-collaboration.md) | Gemini integration, teaching behavior, context, operations, and edit safety |
-| [Implementation plan](implementation-plan.md) | Sequential solo milestones, feasibility checks, acceptance criteria, and demo |
+| Document                                          | Purpose                                                                                        |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| [Implementation status](implementation-status.md) | What is built, how to run it, and verification evidence                                        |
+| [Product](product.md)                             | Audience, learning workflow, scope, and product success criteria                               |
+| [Interaction design](interaction-design.md)       | Desk layout, tool interfaces, navigation, accessibility, and previews                          |
+| [Architecture](architecture.md)                   | Stack, state ownership, persistence, Python isolation, and data model                          |
+| [AI collaboration](ai-collaboration.md)           | Gemini integration, teaching behavior, context, operations, and edit safety                    |
+| [Implementation plan](implementation-plan.md)     | Sequential solo milestones, feasibility checks, acceptance criteria, and demo                  |
 | [Decisions and sources](decisions-and-sources.md) | Accepted decisions, repository findings, organizer clarification, and documentation references |
 
 ## Working agreement

@@ -31,14 +31,14 @@ Returning to the desk or switching tools preserves the session. A student can st
 
 Use the sorted array `[2, 5, 8, 12, 16, 23, 38, 56]`, initially searching for `16`. The example uses inclusive `low` and `high` bounds and zero-based indices.
 
-| Step | Student action | Collaborator behavior |
-| --- | --- | --- |
-| Attempt | Draw the array and label `low`, `mid`, and `high` | Read the selected elements and any relevant drawing image |
-| Explanation | Ask, "Why can we discard this half?" | Explain using the sorted-order assumption and propose a diagram annotation |
-| Implementation | Ask, "Show this in Python and print each step" | Propose a short implementation that prints bounds, midpoint, and comparison result |
-| Experiment | Run, then change the target to `17` and run again | Use the actual successful and unsuccessful run outputs as evidence |
-| Visual connection | Select an output step and ask, "Show this on the board" | Propose a static diagram of that recorded step |
-| Reflection | Ask, "Add what we learned to my notes" | Propose session-specific notes with references to the board, source, and run |
+| Step              | Student action                                          | Collaborator behavior                                                              |
+| ----------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Attempt           | Draw the array and label `low`, `mid`, and `high`       | Read the selected elements and any relevant drawing image                          |
+| Explanation       | Ask, "Why can we discard this half?"                    | Explain using the sorted-order assumption and propose a diagram annotation         |
+| Implementation    | Ask, "Show this in Python and print each step"          | Propose a short implementation that prints bounds, midpoint, and comparison result |
+| Experiment        | Run, then change the target to `17` and run again       | Use the actual successful and unsuccessful run outputs as evidence                 |
+| Visual connection | Select an output step and ask, "Show this on the board" | Propose a static diagram of that recorded step                                     |
+| Reflection        | Ask, "Add what we learned to my notes"                  | Propose session-specific notes with references to the board, source, and run       |
 
 For target `16`, the expected midpoint indices are `3`, `5`, and `4`. For target `17`, the interval eventually becomes empty and the result is not found. These are acceptance examples; the actual demo must display output from the implemented program.
 

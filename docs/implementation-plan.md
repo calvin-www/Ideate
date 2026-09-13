@@ -28,23 +28,23 @@ This is the accepted milestone-level plan. The build uses a fresh codebase, pinn
 
 These paths describe the planned responsibility map. The delivered code combines some adapters and orchestration modules; see the implementation status for actual entry points.
 
-| Proposed location | Responsibility |
-| --- | --- |
-| `src/app/page.tsx` | Workspace entry point |
-| `src/app/api/ai/route.ts` | Server-side Gemini requests and streamed responses |
-| `src/features/workspace/model.ts` | Artifact, revision, reference, run, and change-set definitions |
-| `src/features/workspace/store.ts` | Shared workspace state and serialized mutations |
-| `src/features/workspace/persistence.ts` | IndexedDB hydration, write queue, validation, export/import |
-| `src/features/workspace/WorkspaceShell.tsx` | Navigation, editor lifetime, shared chat placement, save status |
-| `src/features/board/BoardEditor.tsx` and `adapter.ts` | Excalidraw integration, selections, scene changes, previews |
-| `src/features/code/CodeEditor.tsx` and `adapter.ts` | Python editing, transactions, source snapshots |
-| `src/features/notes/NoteEditor.tsx` and `adapter.ts` | Markdown editing, preview, source link navigation |
-| `src/features/execution/runner-client.ts` | Validated runner messages, status, timeout, output capture |
-| `runner/` | Separate static runner origin, iframe bridge, Worker, pinned runtime assets |
-| `src/features/ai/context.ts` and `operations.ts` | Context capture, schemas, operation dispatch, validation |
-| `src/features/ai/controller.ts` and `ChangePreview.tsx` | Jobs, provider continuation, review, cancellation, conflict handling |
-| `src/features/desk/DeskScene.tsx` and `ObjectNavigation.tsx` | Scene composition, transitions, accessible object controls |
-| `tests/` | Focused contract and browser integration checks described below |
+| Proposed location                                            | Responsibility                                                              |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------- |
+| `src/app/page.tsx`                                           | Workspace entry point                                                       |
+| `src/app/api/ai/route.ts`                                    | Server-side Gemini requests and streamed responses                          |
+| `src/features/workspace/model.ts`                            | Artifact, revision, reference, run, and change-set definitions              |
+| `src/features/workspace/store.ts`                            | Shared workspace state and serialized mutations                             |
+| `src/features/workspace/persistence.ts`                      | IndexedDB hydration, write queue, validation, export/import                 |
+| `src/features/workspace/WorkspaceShell.tsx`                  | Navigation, editor lifetime, shared chat placement, save status             |
+| `src/features/board/BoardEditor.tsx` and `adapter.ts`        | Excalidraw integration, selections, scene changes, previews                 |
+| `src/features/code/CodeEditor.tsx` and `adapter.ts`          | Python editing, transactions, source snapshots                              |
+| `src/features/notes/NoteEditor.tsx` and `adapter.ts`         | Markdown editing, preview, source link navigation                           |
+| `src/features/execution/runner-client.ts`                    | Validated runner messages, status, timeout, output capture                  |
+| `runner/`                                                    | Separate static runner origin, iframe bridge, Worker, pinned runtime assets |
+| `src/features/ai/context.ts` and `operations.ts`             | Context capture, schemas, operation dispatch, validation                    |
+| `src/features/ai/controller.ts` and `ChangePreview.tsx`      | Jobs, provider continuation, review, cancellation, conflict handling        |
+| `src/features/desk/DeskScene.tsx` and `ObjectNavigation.tsx` | Scene composition, transitions, accessible object controls                  |
+| `tests/`                                                     | Focused contract and browser integration checks described below             |
 
 ## Milestone 0: establish feasibility
 
@@ -138,29 +138,29 @@ These paths describe the planned responsibility map. The delivered code combines
 
 ## Acceptance matrix
 
-| Concern | Evidence |
-| --- | --- |
-| State | Immediate navigation and reload retain the last saved board/code/note changes |
-| Execution | Success, no output, Python error, timeout, Stop, output cap, and restart behave distinctly |
-| AI edits | Review, rejection, ordinary undo, conflicting undo, stale context, and duplicate operations preserve user work |
-| Grounding | Notes and board explanations refer to the actual code revision and run |
-| Teaching | Hint, explanation, and implementation requests produce the requested level of help |
-| Accessibility | Keyboard access, restored focus, hidden-tool isolation, and reduced motion work |
-| Performance | 3D can pause or fail without blocking editing and execution controls |
-| Persistence errors | Failed saves remain visible and recoverable through export |
+| Concern            | Evidence                                                                                                       |
+| ------------------ | -------------------------------------------------------------------------------------------------------------- |
+| State              | Immediate navigation and reload retain the last saved board/code/note changes                                  |
+| Execution          | Success, no output, Python error, timeout, Stop, output cap, and restart behave distinctly                     |
+| AI edits           | Review, rejection, ordinary undo, conflicting undo, stale context, and duplicate operations preserve user work |
+| Grounding          | Notes and board explanations refer to the actual code revision and run                                         |
+| Teaching           | Hint, explanation, and implementation requests produce the requested level of help                             |
+| Accessibility      | Keyboard access, restored focus, hidden-tool isolation, and reduced motion work                                |
+| Performance        | 3D can pause or fail without blocking editing and execution controls                                           |
+| Persistence errors | Failed saves remain visible and recoverable through export                                                     |
 
 Use focused automated checks for revision/idempotency logic, persistence ordering, and runner messages, plus browser integration checks for navigation and editor behavior. Do not build a broad test framework that distracts from proving these boundaries.
 
 ## Three-minute demonstration
 
-| Time | Action |
-| --- | --- |
+| Time      | Action                                                                                       |
+| --------- | -------------------------------------------------------------------------------------------- |
 | 0:00-0:20 | Introduce a student struggling to connect a binary-search diagram to its code; show the desk |
-| 0:20-0:50 | Open the board, select the array, and ask why one half can be discarded |
-| 0:50-1:25 | Ask for Python with trace prints; review and apply the change |
-| 1:25-1:55 | Run, manually change to a missing target, and run again |
-| 1:55-2:30 | Use an output step for a board explanation and capture the learning insight in the journal |
-| 2:30-3:00 | Open a source reference, return to the desk, and show that each tool retained its work |
+| 0:20-0:50 | Open the board, select the array, and ask why one half can be discarded                      |
+| 0:50-1:25 | Ask for Python with trace prints; review and apply the change                                |
+| 1:25-1:55 | Run, manually change to a missing target, and run again                                      |
+| 1:55-2:30 | Use an output step for a board explanation and capture the learning insight in the journal   |
+| 2:30-3:00 | Open a source reference, return to the desk, and show that each tool retained its work       |
 
 Rehearsal determines whether the live demo can fit every AI step. If latency is too high, show the board explanation from the first run and keep the second run's note capture as the final live operation. Do not hide prerecorded output inside a live-looking run.
 

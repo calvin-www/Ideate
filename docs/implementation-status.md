@@ -14,18 +14,18 @@ Updated September 12, 2026. The user explicitly authorized implementation after 
 
 ## Actual entry points
 
-| Area | Source |
-| --- | --- |
-| Workspace/navigation | `src/features/workspace/WorkspaceShell.tsx` |
-| Model, revision checks, undo | `src/features/workspace/model.ts` |
-| State and saving | `src/features/workspace/store.ts`, `persistence.ts`, `importWorkspace.ts` |
-| Desk | `src/features/desk/DeskScene.tsx` |
-| Whiteboard | `src/features/board/BoardEditor.tsx`, `adapter.ts` |
-| Python / Markdown panels | `src/features/code/CodePanel.tsx`, `src/features/notes/NotePanel.tsx` |
-| Shared text editor | `src/features/workspace/TextEditor.tsx` |
-| AI client / review UI | `src/features/ai/useCollaborator.ts`, `ChatPanel.tsx` |
-| Gemini server | `src/app/api/ai/route.ts`, `src/features/ai/server/` |
-| Runner and integration | `runner/`, `src/features/execution/` |
+| Area                         | Source                                                                    |
+| ---------------------------- | ------------------------------------------------------------------------- |
+| Workspace/navigation         | `src/features/workspace/WorkspaceShell.tsx`                               |
+| Model, revision checks, undo | `src/features/workspace/model.ts`                                         |
+| State and saving             | `src/features/workspace/store.ts`, `persistence.ts`, `importWorkspace.ts` |
+| Desk                         | `src/features/desk/DeskScene.tsx`                                         |
+| Whiteboard                   | `src/features/board/BoardEditor.tsx`, `adapter.ts`                        |
+| Python / Markdown panels     | `src/features/code/CodePanel.tsx`, `src/features/notes/NotePanel.tsx`     |
+| Shared text editor           | `src/features/workspace/TextEditor.tsx`                                   |
+| AI client / review UI        | `src/features/ai/useCollaborator.ts`, `ChatPanel.tsx`                     |
+| Gemini server                | `src/app/api/ai/route.ts`, `src/features/ai/server/`                      |
+| Runner and integration       | `runner/`, `src/features/execution/`                                      |
 
 ## Verification evidence
 

@@ -39,16 +39,16 @@ Selection actions are prompt shortcuts: Explain visually, Give me a hint, Show t
 
 Capture context after synchronizing the current editor state. The request has an immutable source selection; moving focus to chat or selecting something else does not retarget an in-flight job.
 
-| Context | Included information |
-| --- | --- |
-| Learning question | Current instruction, explicitly stated goal, relevant prior question or misconception |
-| Active tool | Desk, Board, Code, or Notes; current artifact ID and revision |
-| Selection | Board IDs, code/note offsets tied to a revision, or a run/output range |
-| Board | Up to 100 selected/relevant elements, labels and connections; a whole-board export when available while asking from the board |
-| Code and notes | Selected ranges plus relevant surrounding or linked content |
-| Recent changes | Last ten accepted AI change summaries, target IDs, and revisions; no complete manual edit log |
-| Execution | Selected saved run or last two runs, source revision, status, bounded combined stdout/stderr, and timing |
-| Conversation | Recent messages, attached references, and the continuation data needed by the provider |
+| Context           | Included information                                                                                                          |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Learning question | Current instruction, explicitly stated goal, relevant prior question or misconception                                         |
+| Active tool       | Desk, Board, Code, or Notes; current artifact ID and revision                                                                 |
+| Selection         | Board IDs, code/note offsets tied to a revision, or a run/output range                                                        |
+| Board             | Up to 100 selected/relevant elements, labels and connections; a whole-board export when available while asking from the board |
+| Code and notes    | Selected ranges plus relevant surrounding or linked content                                                                   |
+| Recent changes    | Last ten accepted AI change summaries, target IDs, and revisions; no complete manual edit log                                 |
+| Execution         | Selected saved run or last two runs, source revision, status, bounded combined stdout/stderr, and timing                      |
+| Conversation      | Recent messages, attached references, and the continuation data needed by the provider                                        |
 
 The composer shows a removable selection chip, and messages show the attached source references. The current request includes a bounded overview of all three artifacts even when a selection is present. With no selection, the active artifact is the primary source; from the desk this defaults to code alongside the overview. Cropped-selection images and per-artifact removal controls for the overview are not implemented.
 
@@ -62,17 +62,17 @@ Keep manual content and runtime output as data. Instructions embedded in a diagr
 
 All operations identify their target explicitly. The model requests operations; application adapters perform them. Validate schema, allowed fields, identifiers, payload limits, and current state independently of model output.
 
-| Operation | Inputs | Result or effect |
-| --- | --- | --- |
-| `read_board` | `{ids?: string[]}` | Bounded elements/connections, revision, and source reference; image is attached to the initial request when available |
-| `edit_board` | `{baseRevision, additions, updates, deleteIds, summary}` | Proposed diagram change to the single board |
-| `read_code` | `{from?: number, to?: number}` | Python text excerpt, offsets, full length, revision, and source reference |
-| `edit_code` | `{baseRevision, replacements: [{from,to,text}], summary}` | Proposed Python change |
-| `read_notes` | `{from?: number, to?: number}` | Markdown excerpt, offsets, full length, revision, and source reference |
-| `edit_notes` | `{baseRevision, replacements: [{from,to,text}], summary}` | Proposed Markdown change; appending uses `from = to = document.length` |
-| `run_python` | `{revision}` | Requests the current code at exactly that revision; returns the actual saved run result |
-| `read_run` | `{id, from?: number, to?: number}` | Existing run's saved source, bounded output range, status, timing, and source reference |
-| `link_artifacts` | `{sourceIds: string[], target: 'board' \| 'code' \| 'notes', summary}` | For `notes`, a reviewed append of Markdown source links; board/code metadata targets return unsupported |
+| Operation        | Inputs                                                                 | Result or effect                                                                                                      |
+| ---------------- | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `read_board`     | `{ids?: string[]}`                                                     | Bounded elements/connections, revision, and source reference; image is attached to the initial request when available |
+| `edit_board`     | `{baseRevision, additions, updates, deleteIds, summary}`               | Proposed diagram change to the single board                                                                           |
+| `read_code`      | `{from?: number, to?: number}`                                         | Python text excerpt, offsets, full length, revision, and source reference                                             |
+| `edit_code`      | `{baseRevision, replacements: [{from,to,text}], summary}`              | Proposed Python change                                                                                                |
+| `read_notes`     | `{from?: number, to?: number}`                                         | Markdown excerpt, offsets, full length, revision, and source reference                                                |
+| `edit_notes`     | `{baseRevision, replacements: [{from,to,text}], summary}`              | Proposed Markdown change; appending uses `from = to = document.length`                                                |
+| `run_python`     | `{revision}`                                                           | Requests the current code at exactly that revision; returns the actual saved run result                               |
+| `read_run`       | `{id, from?: number, to?: number}`                                     | Existing run's saved source, bounded output range, status, timing, and source reference                               |
+| `link_artifacts` | `{sourceIds: string[], target: 'board' \| 'code' \| 'notes', summary}` | For `notes`, a reviewed append of Markdown source links; board/code metadata targets return unsupported               |
 
 Artifact targets are implicit in each tool name because this version has one board, one Python document, and one notes document. The provider argument schema does not contain a job ID, expected source text, filename, or source hash. The client adds job/operation identity and source-revision guards before staging a proposal. Python execution captures the exact current source and revision in the browser; no source hash is computed.
 
@@ -143,6 +143,6 @@ The local server enforces matching origin, bounded JSON depth/size, a process-lo
 
 Evaluate: a labeled array, an ambiguous drawing, a request for only a hint, a full-code request, a missing-target run, a stale patch, a duplicate operation, cancellation before Apply, and notes grounded in an actual run. Check artifact correctness and teaching clarity rather than only whether a model returned valid JSON.
 
-Automated tests cover request validation, safe error mapping, streaming/continuation, bounded retries, stale target/source edits, duplicate Apply, cancellation, unrequested-run rejection, immutable context, saved-run references, and reviewed notes links. Live evidence currently covers the preflight capabilities and browser explanation above. The complete pedagogical evaluation, reliable multi-artifact live workflow under provider load, and public deployment are still targets.
+Automated tests cover request validation, safe error mapping, streaming/continuation, bounded retries, stale target/source edits, duplicate Apply, cancellation, unrequested-run rejection, immutable context, saved-run references, and reviewed notes links. Live browser checks also verified a reviewed notes append and a later source-linked explanation of the actual Python trace; clicking the Python output link opened the recorded revision and output. Provider errors and rate limiting prevented a claim of consistent live availability. The complete pedagogical evaluation, reliable multi-artifact live workflow under provider load, and public deployment are still targets.
 
 Sources: [Gemini model](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash), [function calling](https://ai.google.dev/gemini-api/docs/function-calling), [SDK libraries](https://ai.google.dev/gemini-api/docs/libraries). See [architecture](architecture.md) for storage and execution contracts.
