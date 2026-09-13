@@ -10,8 +10,6 @@ export async function goToTool(page: Page, name: string) {
 }
 
 export async function arrange(page: Page, action: string) {
-  await page.getByRole("button", { name: "Editor layout", exact: true }).click();
-  const advanced = /^(Float|Tab with)/.test(action);
-  if (advanced) await page.getByRole("button", { name: /^More arrangements/ }).click();
+  await page.getByRole("button", { name: "Addons", exact: true }).click();
   await page.getByRole("button", { name: action, exact: true }).click();
 }

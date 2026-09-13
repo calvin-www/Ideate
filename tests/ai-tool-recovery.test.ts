@@ -128,6 +128,34 @@ describe("invalid tool recovery", () => {
     expect((await handleAiRequest(request(continuation), dependencies)).status).toBe(409);
   });
 
+  it.each([
+    [[]],
+    [[{ text: "" }]],
+    [[{ text: "done thinking", thought: true, thoughtSignature: "signed-thought" }]],
+  ])("completes a step silently when the model has nothing to add after tool results: %j", async (parts) => {
+    let attempts = 0;
+    const dependencies = {
+      limits, limiter: createRateLimiter(100), budgets: createBudgetStore(),
+      generate: async () => (async function* () { attempts++; yield chunk(attempts === 1 ? [{ text: "Adding the block now." }, valid] : parts); })(),
+    };
+    const first = await events(await handleAiRequest(request(), dependencies));
+    expect(first.at(-1).type).toBe("done");
+    const continuation = { continuation: first.at(-1).continuation, toolResults: [{ id: "read", name: "read_board", result: {} }] };
+    const second = await events(await handleAiRequest(request(continuation), dependencies));
+    expect(attempts).toBe(2);
+    expect(second.some((event) => event.type === "error")).toBe(false);
+    expect(second.filter((event) => event.type === "call")).toHaveLength(0);
+    expect(second.at(-1).type).toBe("done");
+  });
+
+  it("still reports an empty first answer as an error", async () => {
+    const result = await events(await handleAiRequest(request(), {
+      limits, limiter: createRateLimiter(100),
+      generate: async () => (async function* () { yield chunk([{ text: "", thought: true }]); })(),
+    }));
+    expect(result.at(-1)).toEqual({ type: "error", message: "Gemini returned an empty response. Please try again." });
+  });
+
   it("does not attempt repair after request cancellation", async () => {
     const controller = new AbortController();
     let attempts = 0;

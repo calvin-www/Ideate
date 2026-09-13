@@ -20,7 +20,7 @@ test("header controls leave the full tool area available and chat opens only by 
   const chatBox = (await chat.boundingBox())!;
   expect(chatBox.x - micBox.x - micBox.width).toBeLessThanOrEqual(10);
   expect(Math.abs(micBox.y - chatBox.y)).toBeLessThan(2);
-  await expect(header.getByRole("button", { name: "Editor layout", exact: true })).toBeVisible();
+  await expect(header.getByRole("button", { name: "Addons", exact: true })).toBeVisible();
   const headerBox = (await header.boundingBox())!;
   const editorBox = (await page.getByRole("region", { name: "Python workspace", exact: true }).boundingBox())!;
   expect(editorBox.y - headerBox.y - headerBox.height).toBeLessThan(3);
@@ -68,7 +68,7 @@ test(`compact controls remain reachable at ${width}px`, async ({ page }) => {
   await expect(header.getByRole("button", { name: "Turn on microphone", exact: true })).toBeInViewport();
   await expect(header.getByRole("button", { name: "Toggle study partner", exact: true })).toBeInViewport();
   await goToTool(page, "Computer");
-  await expect(header.getByRole("button", { name: "Editor layout", exact: true })).toBeInViewport();
+  await expect(header.getByRole("button", { name: "Addons", exact: true })).toBeInViewport();
   for (const control of await header.getByRole("button").all()) {
     const bounds = await control.boundingBox();
     expect(bounds).not.toBeNull();
@@ -76,9 +76,9 @@ test(`compact controls remain reachable at ${width}px`, async ({ page }) => {
     expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(width);
   }
   await page.screenshot({ path: test.info().outputPath(`narrow-controls-${width}.png`) });
-  await header.getByRole("button", { name: "Editor layout", exact: true }).click();
-  await expect(page.getByRole("dialog", { name: "Editor layout options" })).toBeInViewport();
-  const menuBounds = (await page.getByRole("dialog", { name: "Editor layout options" }).boundingBox())!;
+  await header.getByRole("button", { name: "Addons", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Addon options" })).toBeInViewport();
+  const menuBounds = (await page.getByRole("dialog", { name: "Addon options" }).boundingBox())!;
   expect(menuBounds.x).toBeGreaterThanOrEqual(12);
   expect(menuBounds.x + menuBounds.width).toBeLessThanOrEqual(width - 12);
   await page.screenshot({ path: test.info().outputPath(`narrow-layout-${width}.png`) });

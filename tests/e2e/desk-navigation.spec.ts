@@ -14,7 +14,7 @@ test("desk entry opens only the requested tool after its original pane was hidde
   await page.keyboard.type(" # undo me");
   const original = await editor.elementHandle();
   // Existing basic split command is used so the failure isolates entry behavior.
-  await page.getByRole("button", { name: "Editor layout", exact: true }).click();
+  await page.getByRole("button", { name: "Addons", exact: true }).click();
   await page.getByRole("button", { name: "Split with Journal", exact: true }).click();
   await page.getByRole("button", { name: "Hide Python", exact: true }).click();
   await expect(python(page)).toBeHidden();
@@ -49,7 +49,7 @@ test("desk launches and shortcuts preserve an explicitly recoverable arrangement
   await arrange(page, "Restore previous arrangement");
   await expect(journal(page)).toBeVisible();
   await expect(python(page)).toBeVisible();
-  await page.getByRole("button", { name: "Editor layout", exact: true }).click();
+  await page.getByRole("button", { name: "Addons", exact: true }).click();
   await page.screenshot({ path: test.info().outputPath("layout-menu.png") });
   await page.keyboard.press("Escape");
 });

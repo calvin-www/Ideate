@@ -34,7 +34,7 @@ One soft key light, ambient fill, and inexpensive contact shadows are sufficient
 
 The scene should stop rendering while an opaque tool interface covers it. Return transitions must not delay the availability of navigation controls.
 
-Layout offers beside/below placements first, with tabs and floating panes under **More arrangements**. **Show only [tool]** keeps the focused tool; **Restore previous arrangement** recovers the last arrangement explicitly. Selecting desk objects never automatically restores a saved layout. Content, editor history, cursor, scroll, journal mode, and board camera remain in the mounted editors. Output returns to its embedded location when Computer opens alone. Following an artifact reference reveals its tool without discarding an active arrangement.
+**Addons** offers beside, below, tab, and float placements for every other tool in one row. **Show only [tool]** keeps the focused tool; **Restore previous arrangement** recovers the last arrangement explicitly. Selecting desk objects never automatically restores a saved layout. Content, editor history, cursor, scroll, journal mode, and board camera remain in the mounted editors. Output returns to its embedded location when Computer opens alone. Following an artifact reference reveals its tool without discarding an active arrangement.
 
 ## Whiteboard
 

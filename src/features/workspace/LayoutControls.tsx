@@ -36,10 +36,8 @@ export default function LayoutControls(props: Props) {
   const id = useId();
   const menu = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState({ top: 0, right: 16 });
-  const [more, setMore] = useState(false);
   const act = (action: () => void) => {
     menu.current?.hidePopover();
-    setMore(false);
     action();
   };
   return (
@@ -57,11 +55,10 @@ export default function LayoutControls(props: Props) {
       <button
         type="button"
         className={styles.layoutButton}
-        aria-label="Editor layout"
-        title="Arrange editors"
+        aria-label="Addons"
+        title="Add tools alongside this editor"
         popoverTarget={id}
         onClick={(event) => {
-          setMore(false);
           const bounds = event.currentTarget.getBoundingClientRect();
           const menuWidth = Math.min(315, window.innerWidth - 24);
           setPosition({
@@ -74,27 +71,29 @@ export default function LayoutControls(props: Props) {
         }}
       >
         <LayoutGrid size={15} />
-        <span>Layout</span>
+        <span>Addons</span>
       </button>
       <div
         id={id}
         ref={menu}
         popover="auto"
         role="dialog"
-        aria-label="Editor layout options"
+        aria-label="Addon options"
         className={styles.menu}
         style={position}
       >
-        <strong>Arrange editors</strong>
+        <strong>Addons</strong>
         <p>
           {props.narrow
-            ? "Use a wider window to split or float editors."
-            : `Arrange tools beside or below ${toolTitles[props.focused]}.`}
+            ? "Use a wider window to split, tab, or float editors."
+            : `Add tools beside, below, tabbed, or floating around ${toolTitles[props.focused]}.`}
         </p>
         <div className={styles.columnLabels} aria-hidden="true">
           <span>Tool</span>
           <span>Beside</span>
           <span>Below</span>
+          <span>Tab</span>
+          <span>Float</span>
         </div>
         {tools
           .filter((tool) => tool !== props.focused)
@@ -119,49 +118,26 @@ export default function LayoutControls(props: Props) {
               >
                 <Rows2 size={16} />
               </button>
+              <button
+                type="button"
+                disabled={props.narrow}
+                aria-label={`Tab with ${toolTitles[tool]}`}
+                title="Add to tab group"
+                onClick={() => act(() => props.open(tool, "within"))}
+              >
+                <PanelsTopLeft size={16} />
+              </button>
+              <button
+                type="button"
+                disabled={props.narrow}
+                aria-label={`Float ${toolTitles[tool]}`}
+                title="Open floating editor"
+                onClick={() => act(() => props.open(tool, "float"))}
+              >
+                <PictureInPicture2 size={16} />
+              </button>
             </div>
           ))}
-        {!props.narrow && (
-          <>
-            <button
-              type="button"
-              className={styles.moreButton}
-              aria-expanded={more}
-              aria-controls={`${id}-more`}
-              onClick={() => setMore(!more)}
-            >
-              More arrangements <span aria-hidden="true">{more ? "−" : "+"}</span>
-            </button>
-            <div id={`${id}-more`} hidden={!more}>
-              <div className={styles.columnLabels} aria-hidden="true">
-                <span>Tool</span>
-                <span>Tab</span>
-                <span>Float</span>
-              </div>
-              {tools.filter((tool) => tool !== props.focused).map((tool) => (
-                <div key={tool} className={styles.toolRow}>
-                  <span>{toolTitles[tool]}</span>
-                  <button
-                    type="button"
-                    aria-label={`Tab with ${toolTitles[tool]}`}
-                    title="Add to tab group"
-                    onClick={() => act(() => props.open(tool, "within"))}
-                  >
-                    <PanelsTopLeft size={16} />
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={`Float ${toolTitles[tool]}`}
-                    title="Open floating editor"
-                    onClick={() => act(() => props.open(tool, "float"))}
-                  >
-                    <PictureInPicture2 size={16} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
         <div className={styles.menuActions} hidden={!props.advanced && !props.hasSaved}>
           {props.advanced && !props.maximized && (
             <button type="button" onClick={() => act(props.maximize)}>

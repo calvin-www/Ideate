@@ -52,6 +52,19 @@ function replayableCalls(calls: NonNullable<Part["functionCall"]>[]): boolean {
   });
 }
 
+// The model narrates and calls a tool in the same turn, so once the tool
+// result arrives it often has nothing left to add. That silent turn is the
+// end of a step, not a failure. Repair feedback and continue instructions
+// carry a text part, so they are excluded and still require a real answer.
+function followsToolResults(contents: Content[]): boolean {
+  const last = contents.at(-1);
+  return (
+    last?.role === "user" &&
+    !!last.parts?.length &&
+    last.parts.every((part) => part.functionResponse)
+  );
+}
+
 function checkContinuation(contents: Content[]) {
   if (
     contents.length > 32 ||
@@ -286,11 +299,16 @@ export async function handleAiRequest(
               !parts.some(
                 (part) => (part.text && !part.thought) || part.functionCall,
               )
-            )
+            ) {
+              if (followsToolResults(contents)) {
+                emit({ type: "done", continuation: { contents } });
+                return;
+              }
               throw new AiRequestError(
                 502,
                 "Gemini returned an empty response. Please try again.",
               );
+            }
             if (calls.length > 12)
               throw new AiRequestError(
                 502,
