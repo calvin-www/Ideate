@@ -18,6 +18,7 @@ import { adapters } from "../workspace/adapters";
 import type { BoardElement } from "../workspace/model";
 import { sampleBoard } from "./adapter";
 import BoardAttention from "./BoardAttention";
+import BoardPresentation from "../voice/BoardPresentation";
 import {
   captureBoardFiles,
   checkImageReferences,
@@ -27,6 +28,8 @@ import { readBoardImage } from "./readImage";
 
 export default function BoardEditor({ active }: { active: boolean }) {
   const board = useWorkspace((s) => s.data.board);
+  const navigationEpoch = useWorkspace((s) => s.navigationEpoch);
+  const root = useRef<HTMLDivElement>(null);
   const [api, setApi] = useState<ExcalidrawImperativeAPI | null>(null);
   const hash = useRef("");
   const lastSelection = useRef("");
@@ -181,8 +184,18 @@ export default function BoardEditor({ active }: { active: boolean }) {
         .catch(() => {});
     }
   }, [active, api]);
+  useEffect(() => {
+    if (!active || !api || useWorkspace.getState().view !== "board") return;
+    const frame = requestAnimationFrame(() => root.current?.querySelector<HTMLElement>(".excalidraw")?.focus({ preventScroll: true }));
+    return () => cancelAnimationFrame(frame);
+  }, [active, api, navigationEpoch]);
+  useEffect(() => {
+    const refresh = () => { if (active) api?.refresh(); };
+    window.addEventListener("ideate:editor-layout", refresh);
+    return () => window.removeEventListener("ideate:editor-layout", refresh);
+  }, [active, api]);
   return (
-    <div className="board-editor">
+    <div ref={root} className="board-editor">
       <div className="editor-toolbar">
         <div>
           <strong>Your whiteboard</strong>
@@ -275,6 +288,7 @@ export default function BoardEditor({ active }: { active: boolean }) {
         }}
       >
         <Excalidraw
+          handleKeyboardGlobally={false}
           excalidrawAPI={setApi}
           validateEmbeddable={false}
           initialData={{
@@ -389,7 +403,7 @@ export default function BoardEditor({ active }: { active: boolean }) {
               (id) => appState.selectedElementIds[id],
             );
             const selectionKey = `${ids.join(",")}:${useWorkspace.getState().data.board.revision}`;
-            if (active && lastSelection.current !== selectionKey) {
+            if (active && useWorkspace.getState().view === "board" && lastSelection.current !== selectionKey) {
               lastSelection.current = selectionKey;
               useWorkspace.setState({
                 selection: ids.length
@@ -424,6 +438,7 @@ export default function BoardEditor({ active }: { active: boolean }) {
           }}
         />
         {api && <BoardAttention api={api} active={active} />}
+        {api && active && <BoardPresentation api={api} />}
       </div>
     </div>
   );

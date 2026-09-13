@@ -27,7 +27,14 @@ export type PendingChange = {
   proposal: Proposal;
   preview: string | BoardElement[];
 };
+export type VoiceHooks = {
+  enabled: () => boolean;
+  context: () => Record<string, unknown>;
+  play: (speech: string, signal: AbortSignal, change?: PendingChange, action?: () => Promise<unknown>) => Promise<void>;
+  clear?: () => void;
+};
 type Options = {
+  voice?: VoiceHooks;
   runCode: () => Promise<Run>;
   stopCode?: () => void;
   onPending: (value: PendingChange | null) => void;
@@ -38,8 +45,10 @@ type Options = {
 type Call = { id: string; name: string; args: Record<string, unknown> };
 type Continuation = { contents: unknown[]; token?: string };
 type Resume = { contents: unknown[]; token: string; append: boolean };
-type Review = PendingChange & { resolve: (result: unknown) => void };
+type Review = PendingChange & { speech?: string; resolve: (result: unknown) => void };
 type Job = {
+  voice: boolean;
+  taught: boolean;
   id: string;
   controller: AbortController;
   assistantId: string;
@@ -413,7 +422,7 @@ export function createCollaborator(options: Options) {
     }
   }
 
-  async function stage(job: Job, call: Call): Promise<unknown> {
+  async function stage(job: Job, call: Call, speech?: string): Promise<unknown> {
     assertActive(job);
     const data = useWorkspace.getState().data;
     const target = (
@@ -509,7 +518,7 @@ export function createCollaborator(options: Options) {
       checkProposal(useWorkspace.getState().data, proposal, job.id);
       if (useWorkspace.getState().autoApplyChanges) {
         return await new Promise((resolve) => {
-          job.review = { proposal, preview, resolve };
+          job.review = { proposal, preview, speech, resolve };
           void approve();
         });
       }
@@ -517,7 +526,7 @@ export function createCollaborator(options: Options) {
         activity: `Review the proposed ${target === "code" ? "Python" : target} change`,
       });
       return await new Promise((resolve) => {
-        job.review = { proposal, preview, resolve };
+        job.review = { proposal, preview, speech, resolve };
         options.onPending({ proposal, preview });
       });
     } catch {
@@ -540,6 +549,26 @@ export function createCollaborator(options: Options) {
         message: "The operation arguments are invalid.",
       };
     call.args = args;
+    if (call.name === "teach_step") {
+      const speech = String(args.speech);
+      const operation = args.operation as { name: string; args: Record<string, unknown> } | undefined;
+      job.taught = true;
+      updateAssistant(job, (message) => ({ ...message, text: [message.text, speech].filter(Boolean).join("\n\n") }));
+      let result: unknown;
+      if (operation?.name.startsWith("edit_")) {
+        result = await stage(job, { id: call.id, ...operation }, job.voice ? speech : undefined);
+      } else if (job.voice && options.voice) {
+        let actionResult: unknown;
+        await options.voice.play(speech, job.controller.signal, undefined, operation ? async () => {
+          actionResult = await executeCall(job, { id: `${call.id}:action`, ...operation });
+        } : undefined);
+        assertActive(job);
+        result = operation ? actionResult : { status: "spoken" };
+      } else result = operation ? await executeCall(job, { id: `${call.id}:action`, ...operation }) : { status: "shown" };
+      assertActive(job);
+      job.results.set(call.id, result);
+      return result;
+    }
     const data = useWorkspace.getState().data;
     let result: unknown;
     if (call.name === "show_attention") {
@@ -567,7 +596,7 @@ export function createCollaborator(options: Options) {
         result = {
           status: "shown",
           target: cue.target,
-          visible: state.view === cue.target,
+          visible: state.view !== "desk" && (state.view === cue.target || state.visibleTools.includes(cue.target)),
           message:
             "Cue set without editing. If the target domain is hidden, the student can use Show in chat.",
         };
@@ -866,6 +895,8 @@ export function createCollaborator(options: Options) {
         .map((tool) => makeReference(initial.data, tool)),
     ];
     const job: Job = {
+      voice: options.voice?.enabled() ?? false,
+      taught: false,
       id: crypto.randomUUID(),
       controller: new AbortController(),
       assistantId: crypto.randomUUID(),
@@ -880,6 +911,8 @@ export function createCollaborator(options: Options) {
         { role: "user", text },
       ],
       context: structuredClone({
+        voiceMode: options.voice?.enabled() ?? false,
+        ...(options.voice?.enabled() ? { voiceDelivery: options.voice.context() } : {}),
         ...captureContext(initial.data, initial.view, selection),
         editPolicy: initial.autoApplyChanges ? "auto-apply" : "review",
         sources,
@@ -962,7 +995,13 @@ export function createCollaborator(options: Options) {
           options.onPause?.(response.paused.message);
           return;
         }
-        if (response.calls.length === 0) break;
+        if (response.calls.length === 0) {
+          if (job.voice && !job.taught && options.voice) {
+            const answer = useWorkspace.getState().data.messages.find((message) => message.id === job.assistantId)?.text;
+            if (answer?.trim()) await options.voice.play(answer.slice(0, 1200), job.controller.signal);
+          }
+          break;
+        }
         continuation = response.continuation;
         results = [];
         for (const call of response.calls) {
@@ -1001,6 +1040,7 @@ export function createCollaborator(options: Options) {
         }));
       }
     } finally {
+      if (active === job) options.voice?.clear?.();
       if (active === job) {
         if (useWorkspace.getState().jobId === job.id)
           useWorkspace.setState({ jobId: null, activity: "" });
@@ -1053,14 +1093,29 @@ export function createCollaborator(options: Options) {
     try {
       const state = useWorkspace.getState();
       checkProposal(state.data, review.proposal, state.jobId);
+      if (review.speech && options.voice) {
+        try {
+          await options.voice.play(review.speech, job.controller.signal, review);
+        } catch (error) {
+          review.resolve({ status: "cancelled", message: "Speech or writing was interrupted. This step was not applied." });
+          if (isActive(job)) {
+            options.onError(error instanceof Error && error.name !== "AbortError" ? error.message : "Writing paused. Completed changes are saved.");
+            cancel();
+          }
+          return;
+        }
+        assertActive(job);
+        checkProposal(useWorkspace.getState().data, review.proposal, job.id);
+      }
       {
         const next = applyProposal(
-          state.data,
+          useWorkspace.getState().data,
           review.proposal,
           state.jobId,
           Array.isArray(review.preview) ? review.preview : undefined,
         );
         state.setData(() => next);
+        options.voice?.clear?.();
         const revision = next[review.proposal.target].revision;
         if (job.sourceRevisions[review.proposal.target] !== undefined)
           job.sourceRevisions[review.proposal.target] = revision;
@@ -1077,6 +1132,7 @@ export function createCollaborator(options: Options) {
         });
       }
     } catch {
+      options.voice?.clear?.();
       if (isActive(job))
         options.onError(
           "The document or source context changed. Your manual edits were preserved; ask for a fresh proposal.",
@@ -1102,6 +1158,7 @@ export function createCollaborator(options: Options) {
   }
 
   function cancel(): void {
+    options.voice?.clear?.();
     suspended?.job.controller.abort();
     suspended = null;
     options.onPause?.("");
@@ -1151,15 +1208,24 @@ export function createCollaborator(options: Options) {
 export function useCollaborator(
   runCode: () => Promise<Run>,
   stopCode?: () => void,
+  voice?: VoiceHooks,
 ) {
   const [pending, setPending] = useState<PendingChange | null>(null);
   const [error, setError] = useState("");
   const [paused, setPaused] = useState("");
   const execution = useRef({ runCode, stopCode });
   execution.current = { runCode, stopCode };
+  const voiceRef = useRef(voice);
+  voiceRef.current = voice;
   const controller = useRef<ReturnType<typeof createCollaborator> | null>(null);
   if (!controller.current)
     controller.current = createCollaborator({
+      voice: {
+        enabled: () => voiceRef.current?.enabled() ?? false,
+        context: () => voiceRef.current?.context() ?? {},
+        play: (...args) => voiceRef.current?.play(...args) ?? Promise.resolve(),
+        clear: () => voiceRef.current?.clear?.(),
+      },
       runCode: () => execution.current.runCode(),
       stopCode: () => execution.current.stopCode?.(),
       onPending: setPending,

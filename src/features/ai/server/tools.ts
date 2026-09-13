@@ -27,7 +27,7 @@ const readText = z.strictObject({
   to: offset.optional(),
 });
 
-export const toolSchemas = {
+const workspaceToolSchemas = {
   show_attention: attentionSchema,
   clear_attention: z.strictObject({
     target: z.enum(["board", "code", "notes"]).optional(),
@@ -84,7 +84,22 @@ export const toolSchemas = {
   }),
 };
 
+export const toolSchemas = {
+  ...workspaceToolSchemas,
+  teach_step: z.strictObject({
+    speech: z.string().trim().min(1).max(1200),
+    operation: z.discriminatedUnion("name", [
+      z.strictObject({ name: z.literal("edit_code"), args: workspaceToolSchemas.edit_code }),
+      z.strictObject({ name: z.literal("edit_notes"), args: workspaceToolSchemas.edit_notes }),
+      z.strictObject({ name: z.literal("edit_board"), args: workspaceToolSchemas.edit_board }),
+      z.strictObject({ name: z.literal("show_attention"), args: workspaceToolSchemas.show_attention }),
+      z.strictObject({ name: z.literal("clear_attention"), args: workspaceToolSchemas.clear_attention }),
+    ]).optional(),
+  }),
+};
+
 export const toolNames = [
+  "teach_step",
   "show_attention",
   "clear_attention",
   "read_board",
@@ -100,6 +115,7 @@ export const toolNames = [
 export type ToolName = (typeof toolNames)[number];
 
 const descriptions: Record<ToolName, string> = {
+  teach_step: "In a voice session, pair a short spoken explanation with one optional workspace edit or attention operation. Speech and visible writing play together after any required edit review. Supply speech as natural spoken words, not Markdown or code. Use one small coherent drawing or a few code/note lines per step. Nested operations use their existing schemas and exact revisions. Omit operation for a spoken answer or question. Read current data as needed between teaching steps. Never claim an edit was applied before the returned result confirms acceptance.",
   show_attention:
     "Point at or highlight existing content without editing or changing the student's selection. Supply target, exact revision, mode point or highlight, and a short explanatory label. For board supply 1-12 existing element ids and omit from/to. For code/notes supply UTF-16 from/to offsets and omit ids; highlights need a nonempty range, points may use from=to. One cue per domain replaces its previous cue. Other domains receive a Show button; this does not navigate. Not for run output.",
   clear_attention:
@@ -140,6 +156,11 @@ export function validateToolCall(
   if (name === "show_attention") return parseAttention(args);
   const parsed = toolSchemas[name as ToolName].safeParse(args);
   if (!parsed.success) return undefined;
+  if (name === "teach_step") {
+    const step = parsed.data as { speech: string; operation?: { name: string; args: unknown } };
+    if (step.operation && !validateToolCall(step.operation.name, step.operation.args)) return undefined;
+    return step;
+  }
   if ("replacements" in parsed.data) {
     const ranges = [...parsed.data.replacements].sort(
       (a, b) => a.from - b.from || a.to - b.to,

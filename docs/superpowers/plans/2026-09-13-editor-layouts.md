@@ -20,23 +20,32 @@
 
 ## Task 1: Integration contract
 
-- [ ] Create `tests/e2e/editor-layout.spec.ts` using real Python/Journal/Whiteboard panels.
-- [ ] Run `npx playwright test tests/e2e/editor-layout.spec.ts -g "splits"` and confirm the missing layout control fails.
-- [ ] Add `tests/editor-layout.test.ts` for rejecting malformed persisted layout and focus/visibility behavior.
+- [x] Create `tests/e2e/editor-layout.spec.ts` using real Python/Journal/Whiteboard panels.
+- [x] Verify a failing navigation regression before the fix, then confirm it passes.
+- [x] Add `tests/editor-layout.test.ts` for rejecting malformed persisted layout and focus/visibility behavior.
 
 ## Task 2: Layout and persistent editor hosts
 
-- [ ] Add `src/features/workspace/layoutPersistence.ts` to read/write versioned layouts, rejecting unknown tools, duplicate IDs, external windows, and invalid geometry.
-- [ ] Add `WorkspaceLayout.tsx`, `DockedEditors.tsx`, `LayoutControls.tsx`, and `WorkspaceLayout.module.css` to isolate persistence, Dockview commands, React hosts, and presentation.
-- [ ] Replace the shell's three editor slots with `WorkspaceLayout` while leaving the desk and runner mounted at their existing scope.
-- [ ] Add store visibility/focus/navigation state and update TextEditor activation and AI attention visibility.
-- [ ] Use `createPortal(editor, stableHost, tool)` so Dockview removal/restoration does not destroy editor state.
-- [ ] Add editor-container sizing and viewport refresh behavior where needed for moving/resizing real editors.
+- [x] Add `src/features/workspace/layoutPersistence.ts` to read/write versioned layouts, rejecting unknown tools, duplicate IDs, external windows, and invalid geometry.
+- [x] Add `WorkspaceLayout.tsx`, `DockedEditors.tsx`, `LayoutControls.tsx`, and `WorkspaceLayout.module.css` to isolate persistence, Dockview commands, React hosts, and presentation.
+- [x] Replace the shell's three editor slots with `WorkspaceLayout` while leaving the desk and runner mounted at their existing scope.
+- [x] Add store visibility/focus/navigation state and update TextEditor activation and AI attention visibility.
+- [x] Use `createPortal(editor, stableHost, tool)` so Dockview removal/restoration does not destroy editor state.
+- [x] Add editor-container sizing and viewport refresh behavior where needed for moving/resizing real editors.
 
 ## Task 3: Verification and review
 
-- [ ] Run the new unit and browser tests, then editor/attention regression tests.
-- [ ] Inspect default, split, floating, and narrow-screen screenshots and fix layout problems.
-- [ ] Run `npm test`, `npm run typecheck`, and `npm run build`.
-- [ ] Request a focused code review of new layout files and touched integration points; fix substantive findings.
-- [ ] Record usage in README and report verified behavior plus any remaining limitations.
+- [x] Run the new unit and browser tests, then editor/attention regression tests.
+- [x] Inspect default, split, floating, and narrow-screen screenshots and fix layout problems.
+- [x] Run `npm test`, `npm run typecheck`, and `npm run build`.
+- [x] Request a focused code review of new layout files and touched integration points; fix substantive findings.
+- [x] Record usage in README and report verified behavior plus any remaining limitations.
+
+## Verification results
+
+- Full unit suite: 22 files, 187 tests passed.
+- Layout browser suite: 7 tests passed. After adding the narrow-window navigation regression and its fix, both navigation tests passed again.
+- Existing workspace, attention, and board-image browser suites: 17 tests passed.
+- Typecheck and production build passed. A subsequent typecheck encountered a newly added, unrelated `tests/voice-progression.test.ts` import of the missing `src/features/voice/progression` module; that concurrent work was left untouched.
+- Focused code and browser review findings were addressed, including floating docking, restoring saved contents and geometry, compact controls, board keyboard focus, and theme selectors.
+- Header navigation always selects one full-size editor, including after a narrow window is widened. Saved arrangements require explicit restoration. Native browser popouts remain outside this version.

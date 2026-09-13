@@ -9,6 +9,7 @@ import { EditorState, StateEffect, StateField } from "@codemirror/state";
 import { useWorkspace } from "./store";
 import { adapters } from "./adapters";
 import AttentionOverlay, { type AttentionRect } from "../ai/AttentionOverlay";
+import TextPresentation from "../voice/TextPresentation";
 
 const theme = EditorView.theme({
   "&": {
@@ -83,6 +84,7 @@ export default function TextEditor({
   executionLine?: number;
 }) {
   const text = useWorkspace((s) => s.data[target].text);
+  const navigationEpoch = useWorkspace((s) => s.navigationEpoch);
   const editor = useRef<ReactCodeMirrorRef>(null);
   const cue = useWorkspace((s) => s.attention[target]);
   const [ready, setReady] = useState(false);
@@ -201,6 +203,11 @@ export default function TextEditor({
           editor.current?.view?.focus();
       });
   }, [active, target, navigationEpoch]);
+  useEffect(() => {
+    const measure = () => { if (active) editor.current?.view?.requestMeasure(); };
+    window.addEventListener("ideate:editor-layout", measure);
+    return () => window.removeEventListener("ideate:editor-layout", measure);
+  }, [active]);
   return (
     <div className="attention-editor">
       <CodeMirror
@@ -241,6 +248,7 @@ export default function TextEditor({
           });
         }}
       />
+      {active && <TextPresentation target={target} />}
       <AttentionOverlay
         cue={cue}
         active={active && ready}

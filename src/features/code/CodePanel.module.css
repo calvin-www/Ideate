@@ -4,9 +4,21 @@
   width: 100%;
   height: 100%;
   min-height: 0;
-  overflow: hidden;
+  overflow: auto;
   background: #fafaf7;
   color: #26382f;
+}
+@container (max-width: 540px) {
+  .panel .toolbar { padding: 0 12px; gap: 8px; }
+  .panel .toolbarActions { gap: 6px; }
+  .panel .runtime { display: none; }
+  .panel .filename { gap: 5px; font-size: 11px; }
+}
+@container (max-width: 420px) {
+  .panel .toolbar { padding: 0 8px; gap: 6px; }
+  .panel .toolbarActions { gap: 4px; }
+  .panel .filename > svg, .panel .iconButton { display: none; }
+  .panel .runButton, .panel .stopButton, .panel .toolbarActions :global(.button) { padding: 7px 9px; font-size: 11px; gap: 4px; }
 }
 .panel[hidden] {
   display: none;

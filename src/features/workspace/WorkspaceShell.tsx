@@ -26,6 +26,8 @@ import CodePanel from "../code/CodePanel";
 import NotePanel from "../notes/NotePanel";
 import WorkspaceDataControls from "./WorkspaceDataControls";
 
+const WorkspaceLayout = dynamic(() => import("./WorkspaceLayout"), { ssr: false });
+
 const BoardEditor = dynamic(() => import("../board/BoardEditor"), {
   ssr: false,
   loading: () => (
@@ -56,7 +58,6 @@ export default function WorkspaceShell() {
   const {
     data,
     view,
-    visited,
     chatOpen,
     hydrated,
     saveStatus,
@@ -69,6 +70,7 @@ export default function WorkspaceShell() {
   const [source, setSource] = useState<ArtifactRef | null>(null);
   const [reducedMotion, setReducedMotion] = useState(false);
   const [flat, setFlat] = useState(false);
+  const [layoutToolbar, setLayoutToolbar] = useState<HTMLDivElement | null>(null);
   const importInput = useRef<HTMLInputElement>(null);
   const lastTool = useRef<Tool | null>(null);
   const sourceDialog = useRef<HTMLElement>(null);
@@ -88,6 +90,7 @@ export default function WorkspaceShell() {
     const onKey = (event: KeyboardEvent) => {
       if (event.isComposing) return;
       if (document.querySelector("dialog[open]")) return;
+      if (event.key === "Escape" && document.querySelector("[popover]:popover-open")) return;
       const composer = (event.target as HTMLElement)?.closest(".chat-composer");
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
         event.preventDefault();
@@ -476,31 +479,19 @@ export default function WorkspaceShell() {
                         ? "Try it. See what happens."
                         : "Keep the part that clicks."}
                   </span>
+                  <div ref={setLayoutToolbar} className="editor-layout-controls" />
                 </div>
               )}
-              {visited.includes("board") && (
-                <section
-                  className="tool-container"
-                  hidden={view !== "board"}
-                  inert={view !== "board"}
-                  aria-label="Whiteboard tool"
-                >
+              <WorkspaceLayout toolbar={layoutToolbar} renderEditor={(tool, visible) =>
+                tool === "board" ? (
                   <BoardEditor
                     key={`${data.id}-${state.editorEpochs.board}`}
-                    active={view === "board"}
+                    active={visible}
                   />
-                </section>
-              )}
-              {visited.includes("code") && (
-                <section
-                  className="tool-container"
-                  hidden={view !== "code"}
-                  inert={view !== "code"}
-                  aria-label="Python tool"
-                >
+                ) : tool === "code" ? (
                   <CodePanel
                     key={`${data.id}-${state.editorEpochs.code}`}
-                    active={view === "code"}
+                    active={visible}
                     runCode={execution.runCode}
                     stopCode={execution.stopCode}
                     runtimeStatus={execution.runtimeStatus}
@@ -508,22 +499,14 @@ export default function WorkspaceShell() {
                     debugSession={execution.debugSession}
                     resumeDebug={execution.resumeDebug}
                   />
-                </section>
-              )}
-              {visited.includes("notes") && (
-                <section
-                  className="tool-container"
-                  hidden={view !== "notes"}
-                  inert={view !== "notes"}
-                  aria-label="Notebook tool"
-                >
+                ) : (
                   <NotePanel
                     key={`${data.id}-${state.editorEpochs.notes}`}
-                    active={view === "notes"}
+                    active={visible}
                     onReference={openSource}
                   />
-                </section>
-              )}
+                )
+              } />
               {view !== "desk" && (
                 <div className="study-actions">
                   <span>

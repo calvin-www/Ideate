@@ -1,0 +1,9 @@
+.text, .board { position: absolute; inset: 0; z-index: 6; overflow: hidden; cursor: pointer; }
+.text { background: #fafaf7; }
+.text > :global(.cm-theme) { height: 100%; }
+.text :global(.cm-editor) { height: 100%; background: #fafaf7; color: #26382f; font-size: 14px; }
+.text :global(.cm-content) { padding: 22px 0; font-family: 'Cascadia Code', 'SFMono-Regular', Consolas, monospace; }
+.text :global(.cm-line) { padding: 0 22px; line-height: 1.8; }
+.text :global(.cm-gutters) { background: #f2f3ed; color: #8a938c; border: none; padding: 0 5px; }
+.label { position: absolute; z-index: 1; right: 12px; top: 8px; padding: 4px 8px; border-radius: 6px; background: #e6eddf; color: #355b46; font-size: 11px; }
+.board svg { display: block; }

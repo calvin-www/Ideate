@@ -8,6 +8,15 @@
   background: #fafaf7;
   color: #26382f;
 }
+@container (max-width: 440px) {
+  .panel .toolbar { padding: 0 10px; gap: 6px; }
+  .panel .actions { gap: 6px; }
+  .panel .filename { gap: 5px; font-size: 11px; }
+  .panel .tabs button { padding: 5px 7px; font-size: 11px; }
+}
+@container (max-width: 350px) {
+  .panel .download { display: none; }
+}
 .panel[hidden],
 .edit[hidden],
 .previewSurface[hidden],

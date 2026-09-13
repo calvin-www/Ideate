@@ -1,0 +1,217 @@
+.layout,
+.single,
+.host,
+.mount {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+.layout {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+}
+.layout[hidden],
+.single[hidden],
+.host[hidden] {
+  display: none;
+}
+.host {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  overflow: hidden;
+  container-type: inline-size;
+}
+.host > div {
+  min-height: 0;
+  flex: 1;
+}
+.dock {
+  height: 100%;
+  width: 100%;
+}
+.layout :global(.dockview-theme-light) {
+  --dv-background-color: #edf0e7;
+  --dv-group-view-background-color: #fafaf7;
+  --dv-tabs-and-actions-container-background-color: #eef2e7;
+  --dv-activegroup-visiblepanel-tab-background-color: #fafaf7;
+  --dv-activegroup-visiblepanel-tab-color: #355b46;
+  --dv-activegroup-hiddenpanel-tab-background-color: #eef2e7;
+  --dv-activegroup-hiddenpanel-tab-color: #78866f;
+  --dv-inactivegroup-visiblepanel-tab-background-color: #f6f8f0;
+  --dv-inactivegroup-visiblepanel-tab-color: #69775f;
+  --dv-inactivegroup-hiddenpanel-tab-background-color: #eef2e7;
+  --dv-inactivegroup-hiddenpanel-tab-color: #78866f;
+  --dv-separator-border: #dce3d4;
+  --dv-tabs-and-actions-container-height: 35px;
+  --dv-tab-font-size: 11px;
+  --dv-tab-divider-color: #dce3d4;
+  --dv-sash-color: #b4c8a5;
+  --dv-drag-over-background-color: #a5c59133;
+  --dv-drag-over-border-color: #7e9a69;
+  --dv-floating-box-shadow: 0 15px 50px #243b3430, 0 0 0 1px #becbb4;
+  --dv-floating-titlebar-background-color: #dfe8d6;
+}
+.layout :global(.dv-resize-container) {
+  border-radius: 9px;
+}
+.layout :global(.dv-tab .dv-default-tab .dv-default-tab-action) {
+  display: none;
+}
+.groupActions {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 0 6px;
+  height: 100%;
+}
+.groupActions button {
+  height: 26px;
+  width: 26px;
+  border: 0;
+  border-radius: 4px;
+  display: grid;
+  place-items: center;
+  color: #687a5d;
+}
+.groupActions button:hover {
+  background: #dfe8d6;
+  color: #355b46;
+}
+.groupActions button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.layoutButton,
+.restore {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #d9e1d1;
+  border-radius: 5px;
+  padding: 7px 9px;
+  background: #fbfcf7;
+  color: #526b47;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.layoutButton:hover,
+.restore:hover {
+  background: #e9efdf;
+}
+.menu {
+  position: fixed;
+  left: auto;
+  bottom: auto;
+  margin: 0;
+  width: 315px;
+  max-width: calc(100vw - 24px);
+  border: 1px solid #d5dfcb;
+  border-radius: 10px;
+  padding: 18px;
+  background: #fbfcf7;
+  color: #354b2f;
+  box-shadow: 0 12px 40px #213b2926;
+}
+.menu::backdrop {
+  background: transparent;
+}
+.menu > strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.menu > p {
+  color: #7c8a71;
+  font-size: 11px;
+  line-height: 1.6;
+  margin: 7px 0 15px;
+}
+.toolRow {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 0;
+}
+.toolRow > span {
+  flex: 1;
+  font-size: 12px;
+}
+.toolRow button,
+.keyboardSizing button {
+  display: grid;
+  place-items: center;
+  width: 31px;
+  height: 30px;
+  border: 1px solid #dce4d3;
+  border-radius: 5px;
+  background: #f4f7ec;
+  color: #5a734d;
+}
+.toolRow button:hover,
+.keyboardSizing button:hover {
+  background: #e2ecd6;
+}
+.menu button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.menuActions {
+  margin-top: 10px;
+  border-top: 1px solid #e0e7d8;
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.menuActions button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border-radius: 4px;
+  text-align: left;
+  padding: 8px 5px;
+  font-size: 11px;
+  color: #5a6f4e;
+}
+.menuActions button:hover {
+  background: #edf2e5;
+}
+.keyboardSizing {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid #e0e7d8;
+  padding-top: 12px;
+  margin-top: 8px;
+  font-size: 10px;
+  color: #7c8a71;
+}
+.keyboardSizing > div {
+  display: flex;
+  gap: 4px;
+}
+.keyboardSizing button {
+  width: 27px;
+  height: 27px;
+}
+.controls button:focus-visible,
+.groupActions button:focus-visible,
+.menu button:focus-visible {
+  outline: 2px solid #6e9259;
+  outline-offset: 2px;
+}
+@media (max-width: 800px) {
+  .layoutButton span {
+    display: none;
+  }
+  .restore {
+    padding: 6px;
+    font-size: 10px;
+  }
+}

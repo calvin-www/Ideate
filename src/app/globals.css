@@ -318,6 +318,10 @@ svg {
   font-size: 11px;
   color: #8b9484;
 }
+.editor-layout-controls {
+  margin-left: auto;
+  flex-shrink: 0;
+}
 .tool-container {
   flex: 1;
   min-height: 0;
