@@ -12,7 +12,7 @@ npm ci
 
 Copy `.env.example` to `.env.local` and set `GEMINI_API_KEY`. Keep it server-side; do not add a `NEXT_PUBLIC_` prefix. The current development workspace already has a local key configured.
 
-AI output defaults to 16,384 tokens per generation and 32,768 per request across tool rounds and retries, including thinking. Configure these with `AI_MAX_OUTPUT_TOKENS` and `AI_MAX_JOB_OUTPUT_TOKENS`. Cutoffs can recover automatically up to twice within the remaining budget; **Continue** grants a new bounded budget when the response pauses. Completed edits and partial text are preserved.
+AI output tokens are not capped by the app; the model's own output limit is the only ceiling. Cutoffs and invalid tool calls can recover automatically up to twice per request, and each request allows up to eight tool rounds; **Continue** grants fresh attempts when the response pauses. Completed edits and partial text are preserved.
 
 ```sh
 npm run dev

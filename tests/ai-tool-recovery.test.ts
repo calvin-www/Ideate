@@ -9,14 +9,14 @@ import { createWorkspace } from "../src/features/workspace/model";
 import { useWorkspace } from "../src/features/workspace/store";
 
 const initial = { messages: [{ role: "user", text: "Draw a small explanation" }], context: {} };
-const limits = { generation: 8, total: 64, recoveries: 2 };
+const limits = { recoveries: 2 };
 const request = (extra = {}, signal?: AbortSignal) => new Request("http://localhost:3000/api/ai", {
   method: "POST", headers: { origin: "http://localhost:3000", "content-type": "application/json" },
   body: JSON.stringify({ ...initial, ...extra }), signal,
 });
-const chunk = (parts: unknown[], finishReason = "STOP", usage = true) => ({
+const chunk = (parts: unknown[], finishReason = "STOP") => ({
   candidates: [{ content: { role: "model", parts }, finishReason }],
-  ...(usage ? { usageMetadata: { candidatesTokenCount: 1, thoughtsTokenCount: 1 } } : {}),
+  usageMetadata: { candidatesTokenCount: 1, thoughtsTokenCount: 1 },
 }) as GenerateContentResponse;
 const invalid: Part = { functionCall: { id: "draw", name: "edit_board", args: { baseRevision: 0 } }, thoughtSignature: "signed-invalid-args" };
 const valid: Part = { functionCall: { id: "read", name: "read_board", args: {} }, thoughtSignature: "signed-read" };
@@ -71,31 +71,18 @@ describe("invalid tool recovery", () => {
     expect(() => parseAiRequest({ ...initial, continuation: result.at(-1).continuation, toolResults: [{ id: "read", name: "read_board", result: {} }] })).not.toThrow();
   });
 
-  it("uses the same two-recovery limit even when STOP usage leaves tokens", async () => {
-    const allowances: number[] = [];
+  it("uses the same two-recovery limit for invalid tool calls", async () => {
+    let attempts = 0;
     const result = await events(await handleAiRequest(request(), {
       limits, limiter: createRateLimiter(100),
-      generate: async (_contents, _signal, allowance) => {
-        allowances.push(allowance);
+      generate: async () => {
+        attempts++;
         return (async function* () { yield chunk([invalid]); })();
       },
     }));
-    expect(allowances).toEqual([8, 8, 8]);
+    expect(attempts).toBe(3);
     expect(result.at(-1).type).toBe("error");
     expect(result.some((event) => event.type === "call" || event.type === "done")).toBe(false);
-  });
-
-  it("charges missing usage fully and stops when the shared token budget is spent", async () => {
-    const allowances: number[] = [];
-    const result = await events(await handleAiRequest(request(), {
-      limits: { ...limits, total: 12 }, limiter: createRateLimiter(100),
-      generate: async (_contents, _signal, allowance) => {
-        allowances.push(allowance);
-        return (async function* () { yield chunk([invalid], "STOP", false); })();
-      },
-    }));
-    expect(allowances).toEqual([8, 4]);
-    expect(result.at(-1).type).toBe("error");
   });
 
   it("shares recoveries with truncation and preserves only earlier visible text", async () => {
@@ -112,7 +99,7 @@ describe("invalid tool recovery", () => {
     expect(result.at(-1).type).toBe("error");
   });
 
-  it("carries used repair allowance through a single-use tool checkpoint", async () => {
+  it("carries used repairs through a single-use tool checkpoint", async () => {
     let attempts = 0;
     const dependencies = {
       limits, limiter: createRateLimiter(100), budgets: createBudgetStore(),

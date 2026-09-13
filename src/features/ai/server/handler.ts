@@ -123,27 +123,21 @@ export async function handleAiRequest(
       ? (body.resume.contents as Content[])
       : buildContents(body);
     let append = body.resume?.append ?? false;
-    let allowance = 0;
     const openGeneration = async (recovery = false) => {
       signal.throwIfAborted();
-      allowance = Math.min(budget.generation, budget.remaining);
-      // Reserve before contacting Gemini. Missing usage, errors, and cancellation
-      // keep the reservation; an unknown charge never creates more budget.
-      budget.remaining -= allowance;
       const provider = await (dependencies.generate ?? generateStream)(
         contents,
         signal,
-        allowance,
         recovery,
       );
       iterator = provider[Symbol.asyncIterator]();
       return iterator.next();
     };
     let first: IteratorResult<GenerateContentResponse> | undefined;
-    if (budget.remaining > 0 && budget.rounds < 8) {
+    if (budget.rounds < 8) {
       budget.rounds++;
       // Preserve meaningful HTTP errors before streaming. Even this transient
-      // retry consumes the same job budget and recovery count.
+      // retry consumes the same recovery count.
       for (let attempt = 0; ; attempt++) {
         try {
           first = await openGeneration(attempt > 0);
@@ -154,7 +148,6 @@ export async function handleAiRequest(
             (error as { status?: number } | null)?.status !== 503 ||
             error instanceof AiRequestError ||
             signal.aborted ||
-            budget.remaining <= 0 ||
             budget.recovered >= budget.recoveries
           )
             throw error;
@@ -231,29 +224,12 @@ export async function handleAiRequest(
               item = await iterator!.next();
             }
             signal.throwIfAborted();
-            // Stream metadata is cumulative, not a delta. Only a completed STOP
-            // with valid usage can refund the unused part of the reservation.
-            const generated = usage?.candidatesTokenCount;
-            const thoughts = usage?.thoughtsTokenCount ?? 0;
-            if (
-              finishReason === "STOP" &&
-              Number.isSafeInteger(generated) &&
-              generated! >= 0 &&
-              Number.isSafeInteger(thoughts) &&
-              thoughts >= 0
-            )
-              budget.remaining += Math.max(
-                0,
-                allowance - generated! - thoughts,
-              );
             if (!dependencies.generate)
               console.info("[ai-usage]", {
                 model: process.env.GEMINI_MODEL || "gemini-3.8-flash",
                 finishReason,
-                allowance,
-                outputTokens: generated,
+                outputTokens: usage?.candidatesTokenCount,
                 thinkingTokens: usage?.thoughtsTokenCount,
-                remaining: budget.remaining,
                 recoveries: budget.recovered,
               });
 
@@ -276,10 +252,7 @@ export async function handleAiRequest(
                 visibleText = beforeAttempt;
               }
               checkContinuation(contents);
-              if (
-                budget.remaining <= 0 ||
-                budget.recovered >= budget.recoveries
-              ) {
+              if (budget.recovered >= budget.recoveries) {
                 pause();
                 return;
               }
@@ -324,7 +297,7 @@ export async function handleAiRequest(
               if (visibleText !== beforeAttempt)
                 emit({ type: "replace", text: beforeAttempt });
               visibleText = beforeAttempt;
-              if (budget.remaining <= 0 || budget.recovered >= budget.recoveries)
+              if (budget.recovered >= budget.recoveries)
                 throw new AiRequestError(
                   502,
                   "Gemini could not produce a valid operation after correction. No change from this step was applied; try a smaller request.",

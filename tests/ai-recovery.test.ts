@@ -17,7 +17,7 @@ const request = (extra = {}) =>
     },
     body: JSON.stringify({ ...initial, ...extra }),
   });
-const limits = { generation: 16, total: 32, recoveries: 2 };
+const limits = { recoveries: 2 };
 const limiter = createRateLimiter(1000);
 const responseChunk = (
   parts: unknown[],
@@ -70,33 +70,31 @@ describe("bounded AI recovery", () => {
     ).toBe(false);
     expect(result.at(-1).type).toBe("error");
   });
-  it("uses the default 16,384 allowance and never grants more than 32,768 without usage", async () => {
-    const allowances: number[] = [];
+  it("recovers twice by default before pausing", async () => {
+    let calls = 0;
     const result = await events(
       await handleAiRequest(request(), {
         limiter,
-        generate: async (_contents, _signal, allowance) =>
+        generate: async () =>
           (async function* () {
-            allowances.push(allowance);
+            calls++;
             yield responseChunk([], "MAX_TOKENS");
           })(),
       }),
     );
-    expect(allowances).toEqual([16_384, 16_384]);
+    expect(calls).toBe(3);
     expect(result.at(-1).type).toBe("paused");
   });
 
   it("continues partial text in the same response and preserves provider signatures", async () => {
-    const inputs: Content[][] = [],
-      allowances: number[] = [];
+    const inputs: Content[][] = [];
     const partial = { text: "First part. ", thoughtSignature: "opaque" };
     const result = await events(
       await handleAiRequest(request(), {
         limits,
         limiter,
-        generate: async (contents, _signal, allowance) => {
+        generate: async (contents) => {
           inputs.push(structuredClone(contents));
-          allowances.push(allowance);
           return (async function* () {
             yield inputs.length === 1
               ? responseChunk([partial], "MAX_TOKENS")
@@ -112,10 +110,10 @@ describe("bounded AI recovery", () => {
     expect(result.at(-1).type).toBe("done");
     expect(result.some((event) => event.type === "status")).toBe(true);
     expect(inputs[1].at(-2)?.parts).toEqual([partial]);
-    expect(allowances).toEqual([16, 16]);
+    expect(inputs).toHaveLength(2);
   });
 
-  it("retries an empty cutoff and charges its entire allowance", async () => {
+  it("retries an empty cutoff", async () => {
     let calls = 0;
     const inputs: Content[][] = [];
     const result = await events(
@@ -185,17 +183,13 @@ describe("bounded AI recovery", () => {
     ).toEqual(["read_code"]);
   });
 
-  it("carries thinking and output usage across tool rounds and rejects a replayed checkpoint", async () => {
-    const allowances: number[] = [];
+  it("rejects a replayed tool checkpoint across rounds", async () => {
+    let calls = 0;
     const dependencies = {
       limits,
       limiter,
-      generate: async (
-        _contents: Content[],
-        _signal: AbortSignal,
-        allowance: number,
-      ) => {
-        allowances.push(allowance);
+      generate: async () => {
+        calls++;
         return (async function* () {
           yield responseChunk(
             [{ functionCall: { id: "read", name: "read_code", args: {} } }],
@@ -219,35 +213,29 @@ describe("bounded AI recovery", () => {
         dependencies,
       ),
     );
-    expect(allowances).toEqual([16, 16, 12]);
+    expect(calls).toBe(3);
     const replay = await handleAiRequest(request(secondBody), dependencies);
     expect(replay.status).toBe(409);
-    expect(allowances).toHaveLength(3);
+    expect(calls).toBe(3);
   });
 
-  it("pauses when exhausted, and only an explicit resume starts a fresh bounded budget", async () => {
+  it("pauses after exhausted recoveries, and only an explicit resume grants fresh ones", async () => {
     let calls = 0;
-    const allowances: number[] = [];
     const dependencies = {
       limits,
       limiter,
-      generate: async (
-        _contents: Content[],
-        _signal: AbortSignal,
-        allowance: number,
-      ) => {
-        allowances.push(allowance);
+      generate: async () => {
         calls++;
         return (async function* () {
           yield responseChunk(
-            [{ text: calls < 3 ? "Partial. " : "Finished." }],
-            calls < 3 ? "MAX_TOKENS" : "STOP",
+            [{ text: calls < 4 ? "Partial. " : "Finished." }],
+            calls < 4 ? "MAX_TOKENS" : "STOP",
           );
         })();
       },
     };
     const first = await events(await handleAiRequest(request(), dependencies));
-    expect(calls).toBe(2);
+    expect(calls).toBe(3);
     expect(first.at(-1)).toMatchObject({
       type: "paused",
       resume: { token: expect.any(String), append: true },
@@ -260,7 +248,7 @@ describe("bounded AI recovery", () => {
       ),
     );
     expect(resumed.at(-1).type).toBe("done");
-    expect(allowances).toEqual([16, 16, 16]);
+    expect(calls).toBe(4);
     expect(
       (
         await handleAiRequest(
@@ -271,7 +259,7 @@ describe("bounded AI recovery", () => {
     ).toBe(409);
   });
 
-  it("pauses after exhausted tool rounds without replaying completed operations on resume", async () => {
+  it("pauses after eight tool rounds without replaying completed operations on resume", async () => {
     const inputs: Content[][] = [];
     const dependencies = {
       limits,
@@ -279,7 +267,7 @@ describe("bounded AI recovery", () => {
       generate: async (contents: Content[]) => {
         inputs.push(structuredClone(contents));
         return (async function* () {
-          yield inputs.length <= 2
+          yield inputs.length <= 8
             ? responseChunk([
                 {
                   functionCall: {
@@ -294,7 +282,7 @@ describe("bounded AI recovery", () => {
       },
     };
     let result = await events(await handleAiRequest(request(), dependencies));
-    for (let round = 1; round <= 2; round++) {
+    for (let round = 1; round <= 8; round++) {
       result = await events(
         await handleAiRequest(
           request({
@@ -311,7 +299,7 @@ describe("bounded AI recovery", () => {
         ),
       );
     }
-    expect(inputs).toHaveLength(2);
+    expect(inputs).toHaveLength(8);
     expect(result.at(-1).type).toBe("paused");
     const resumed = await events(
       await handleAiRequest(
@@ -319,9 +307,9 @@ describe("bounded AI recovery", () => {
         dependencies,
       ),
     );
-    expect(inputs).toHaveLength(3);
-    expect(inputs[2].at(-1)?.parts?.[0].functionResponse?.response).toEqual({
-      output: { text: "result-2" },
+    expect(inputs).toHaveLength(9);
+    expect(inputs[8].at(-1)?.parts?.[0].functionResponse?.response).toEqual({
+      output: { text: "result-8" },
     });
     expect(resumed.filter((event) => event.type === "call")).toEqual([]);
     expect(resumed.at(-1).type).toBe("done");
@@ -387,11 +375,11 @@ describe("bounded AI recovery", () => {
     expect(calls).toBe(1);
   });
 
-  it("stops after two recoveries even when tokens remain", async () => {
+  it("stops after two recoveries", async () => {
     let calls = 0;
     const result = await events(
       await handleAiRequest(request(), {
-        limits: { ...limits, generation: 8, total: 64 },
+        limits,
         limiter,
         generate: async () =>
           (async function* () {

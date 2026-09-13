@@ -23,9 +23,9 @@ afterEach(() => {
 });
 
 describe("AI budget integration", () => {
-  it("sends the reserved allowance to Gemini through the actual SDK", async () => {
+  it("does not cap Gemini output tokens through the actual SDK", async () => {
     vi.stubEnv("GEMINI_API_KEY", "fixture-key");
-    let payload: { generationConfig: { maxOutputTokens: number } } | undefined;
+    let payload: { generationConfig: { maxOutputTokens?: number } } | undefined;
     vi.stubGlobal("fetch", async (_url: unknown, init: RequestInit) => {
       payload = JSON.parse(String(init.body));
       return new Response(
@@ -36,15 +36,14 @@ describe("AI budget integration", () => {
     const stream = await generateStream(
       [{ role: "user", parts: [{ text: "Hello" }] }],
       new AbortController().signal,
-      127,
     );
     for await (const _chunk of stream) {
       /* consume the real SDK's parser */
     }
-    expect(payload?.generationConfig.maxOutputTokens).toBe(127);
+    expect(payload?.generationConfig.maxOutputTokens).toBeUndefined();
   });
 
-  it("preserves an applied edit through budget exhaustion and explicit Continue", async () => {
+  it("preserves an applied edit through exhausted recoveries and explicit Continue", async () => {
     let generations = 0;
     const onError = vi.fn();
     const client = createCollaborator({
@@ -63,7 +62,7 @@ describe("AI budget integration", () => {
           }),
           {
             limiter: createRateLimiter(100),
-            limits: { generation: 16, total: 32, recoveries: 2 },
+            limits: { recoveries: 2 },
             generate: async () =>
               (async function* () {
                 generations++;
@@ -98,12 +97,19 @@ describe("AI budget integration", () => {
                                 {
                                   text:
                                     generations === 2
-                                      ? "An unfinished "
-                                      : "explanation.",
+                                      ? "An "
+                                      : generations === 3
+                                        ? "unfinished "
+                                        : generations === 4
+                                          ? ""
+                                          : "explanation.",
                                 },
                               ],
                       },
-                      finishReason: generations === 2 ? "MAX_TOKENS" : "STOP",
+                      finishReason:
+                        generations >= 2 && generations <= 4
+                          ? "MAX_TOKENS"
+                          : "STOP",
                     },
                   ],
                 } as GenerateContentResponse;
@@ -112,7 +118,7 @@ describe("AI budget integration", () => {
         ),
     });
     await client.ask("Add a note and explain");
-    expect(generations).toBe(2);
+    expect(generations).toBe(4);
     expect(useWorkspace.getState().data.messages.at(-1)).toMatchObject({
       status: "paused",
       text: "An unfinished ",
@@ -120,7 +126,7 @@ describe("AI budget integration", () => {
     expect(useWorkspace.getState().data.changes).toHaveLength(1);
     const notes = useWorkspace.getState().data.notes.text;
     await client.resume();
-    expect(generations).toBe(3);
+    expect(generations).toBe(5);
     expect(useWorkspace.getState().data.messages.at(-1)).toMatchObject({
       status: "complete",
       text: "An unfinished explanation.",

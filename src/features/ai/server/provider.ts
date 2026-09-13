@@ -16,14 +16,12 @@ import { SYSTEM_INSTRUCTION } from "./prompt";
 export type GenerateStream = (
   contents: Content[],
   signal: AbortSignal,
-  maxOutputTokens: number,
   recovery?: boolean,
 ) => Promise<AsyncIterable<GenerateContentResponse>>;
 
 export const generateStream: GenerateStream = async (
   contents,
   signal,
-  maxOutputTokens,
   recovery,
 ) => {
   const apiKey = process.env.GEMINI_API_KEY;
@@ -44,7 +42,6 @@ export const generateStream: GenerateStream = async (
           : ""),
       tools: [{ functionDeclarations }],
       automaticFunctionCalling: { disable: true },
-      maxOutputTokens,
       candidateCount: 1,
       thinkingConfig: { includeThoughts: false },
       abortSignal: signal,

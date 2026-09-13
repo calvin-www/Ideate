@@ -1,38 +1,22 @@
 import { createHash, randomUUID } from "node:crypto";
 import { AiRequestError } from "./validation";
 
+// Output tokens are uncapped; the model's own limit is the only ceiling.
+// Generation is bounded by recovery attempts and tool rounds instead.
 export type GenerationLimits = {
-  generation: number;
-  total: number;
   recoveries: number;
 };
 export type GenerationBudget = GenerationLimits & {
-  remaining: number;
   recovered: number;
   rounds: number;
 };
 
 export function generationLimits(): GenerationLimits {
-  const read = (name: string, fallback: number, maximum: number) => {
-    const value = process.env[name];
-    if (!value) return fallback;
-    const parsed = Number(value);
-    if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > maximum)
-      throw new AiRequestError(
-        503,
-        "The AI output limits are not configured correctly.",
-      );
-    return parsed;
-  };
-  return {
-    generation: read("AI_MAX_OUTPUT_TOKENS", 16_384, 65_536),
-    total: read("AI_MAX_JOB_OUTPUT_TOKENS", 32_768, 262_144),
-    recoveries: 2,
-  };
+  return { recoveries: 2 };
 }
 
 export function newBudget(limits: GenerationLimits): GenerationBudget {
-  return { ...limits, remaining: limits.total, recovered: 0, rounds: 0 };
+  return { ...limits, recovered: 0, rounds: 0 };
 }
 
 function digest(value: unknown): string {
