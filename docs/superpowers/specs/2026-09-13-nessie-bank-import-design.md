@@ -1,7 +1,8 @@
 # Nessie bank import — design
 
 Date: 2026-09-13
-Status: approved in chat; implementation plan to follow.
+Status: implemented (commit 8952c6c). See "Sandbox findings" for where the
+live API differed from the plan.
 
 ## Goal
 
@@ -38,6 +39,26 @@ block; then ask the partner questions about it.
   merchant `_id`.
 - The service is known to go down during hackathons. The feature must degrade
   to bundled data without user action.
+
+## Sandbox findings (during implementation)
+
+Live probing changed four details:
+
+- Purchase, deposit and withdrawal amounts are truncated to whole dollars;
+  bills keep cents. Demo amounts are integers except bills.
+- `POST /accounts/{id}/transfers` rejects `payee_id` and `medium`; a transfer
+  is just `{ amount, transaction_date, status, description }` on one account.
+  The seeder posts one leg per account with descriptions `Transfer to …` /
+  `Transfer from …`, and `normalize` reads the direction from that prefix.
+  Two-sided transfers (with `payer_id`/`payee_id`) are still handled and
+  de-duplicated in case a fuller Nessie returns them.
+- Some empty collections return HTTP 404 with a message string; the client
+  treats that as `[]`.
+- Customers cannot be deleted but accounts can, so a partially seeded customer
+  is repaired by deleting its accounts and re-seeding rather than reused as-is.
+- The bundled snapshot is derived from the same `demo.ts` ledger via
+  `normalize` (`demoSnapshot()`), not a separate `snapshot.json`, so live and
+  offline output are identical by construction.
 
 ## Architecture
 
