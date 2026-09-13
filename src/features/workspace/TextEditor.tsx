@@ -197,9 +197,10 @@ export default function TextEditor({
     if (active)
       requestAnimationFrame(() => {
         editor.current?.view?.requestMeasure();
-        editor.current?.view?.focus();
+        if (useWorkspace.getState().view === target)
+          editor.current?.view?.focus();
       });
-  }, [active]);
+  }, [active, target, navigationEpoch]);
   return (
     <div className="attention-editor">
       <CodeMirror

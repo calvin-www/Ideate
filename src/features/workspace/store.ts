@@ -21,6 +21,9 @@ type Store = {
   recoveryNeeded: boolean;
   view: View;
   visited: Tool[];
+  visibleTools: Tool[];
+  navigationEpoch: number;
+  focusTool: (tool: Tool) => void;
   chatOpen: boolean;
   autoApplyChanges: boolean;
   setAutoApplyChanges: (enabled: boolean) => void;
@@ -46,6 +49,11 @@ export const useWorkspace = create<Store>((set, get) => ({
   recoveryNeeded: false,
   view: "desk",
   visited: [],
+  visibleTools: [],
+  navigationEpoch: 0,
+  focusTool: (tool) => {
+    if (get().view !== tool) set({ view: tool, selection: null });
+  },
   chatOpen: false,
   autoApplyChanges: false,
   setAutoApplyChanges: (enabled) => {
@@ -102,6 +110,7 @@ export const useWorkspace = create<Store>((set, get) => ({
     flushSave();
     set({
       view,
+      navigationEpoch: get().navigationEpoch + 1,
       selection: null,
       visited:
         view === "desk"
