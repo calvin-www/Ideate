@@ -1,4 +1,5 @@
 import { expect, test, type Page, type WebSocketRoute } from "@playwright/test";
+import { goToTool } from "./desk-navigation";
 import { writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -54,7 +55,7 @@ async function startDrawing(page: Page, followup = false, beforeDrawing?: () => 
   });
   await page.goto("/");
   await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
-  await page.getByRole("navigation", { name: "Workspace tools" }).getByRole("button", { name: "Whiteboard", exact: true }).click();
+  await goToTool(page, "Whiteboard");
   await page.locator(".excalidraw__canvas.interactive").waitFor();
   await page.getByRole("button", { name: "Turn on microphone", exact: true }).click();
   await expect(page.getByRole("region", { name: "Voice controls" })).toContainText("Listening");
@@ -83,7 +84,14 @@ test("holding Space before a drawing preview starts still pans without taking ov
   });
   const canvas = page.locator(".excalidraw__canvas.interactive");
   const box = (await canvas.boundingBox())!;
-  const left = await preview.locator("svg").evaluate((svg) => svg.getBoundingClientRect().left);
+  // Wait for framing and measure through the stable host: drawing frames replace
+  // the SVG, so a previously resolved SVG can be detached and report zero bounds.
+  await expect.poll(() => preview.evaluate((host) => {
+    const bounds = host.querySelector("svg")?.getBoundingClientRect();
+    return bounds ? bounds.x + bounds.width / 2 : null;
+  })).toBeCloseTo(box.x + box.width / 2, 0);
+  const readLeft = () => preview.evaluate((host) => host.querySelector("svg")!.getBoundingClientRect().left);
+  const left = await readLeft();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
   await page.mouse.move(box.x + box.width / 2 + 90, box.y + box.height / 2 + 50, { steps: 5 });
@@ -91,9 +99,9 @@ test("holding Space before a drawing preview starts still pans without taking ov
   await page.keyboard.up("Space");
   await expect(preview).toBeVisible({ timeout: 1000 });
   await expect(page.getByRole("region", { name: "Voice controls" })).toContainText("Speaking");
-  await expect.poll(() => preview.locator("svg").evaluate((svg) => svg.getBoundingClientRect().left)).toBeCloseTo(left + 90, 0);
+  await expect.poll(readLeft).toBeCloseTo(left + 90, 0);
   await page.getByRole("button", { name: "Fit drawing", exact: true }).click();
-  await expect.poll(() => preview.locator("svg").evaluate((svg) => svg.getBoundingClientRect().left), { timeout: 1000 }).toBeCloseTo(left, 0);
+  await expect.poll(readLeft, { timeout: 1000 }).toBeCloseTo(left, 0);
   await expect(page.getByRole("region", { name: "Voice controls" })).toContainText("Speaking");
   await page.getByRole("button", { name: "Stop", exact: true }).click();
 });

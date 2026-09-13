@@ -5,11 +5,11 @@ import {
   BookOpen,
   Check,
   Download,
-  Home,
   LoaderCircle,
   MessageCircle,
   Monitor,
   PenTool,
+  Table2,
   Upload,
   X,
 } from "lucide-react";
@@ -25,6 +25,7 @@ import { useVoiceSession } from "../voice/useVoiceSession";
 import VoiceControls from "../voice/VoiceControls";
 import CodePanel from "../code/CodePanel";
 import NotePanel from "../notes/NotePanel";
+import SpreadsheetPanel from "../spreadsheet/SpreadsheetPanel";
 import WorkspaceDataControls from "./WorkspaceDataControls";
 
 const WorkspaceLayout = dynamic(() => import("./WorkspaceLayout"), { ssr: false });
@@ -47,11 +48,11 @@ const DeskScene = dynamic(() => import("../desk/DeskScene"), {
     </div>
   ),
 });
-const nav: { id: View; label: string; icon: typeof Home }[] = [
-  { id: "desk", label: "Desk", icon: Home },
+const deskTools: { id: Tool; label: string; icon: typeof Monitor }[] = [
   { id: "board", label: "Whiteboard", icon: PenTool },
   { id: "code", label: "Computer", icon: Monitor },
   { id: "notes", label: "Journal", icon: BookOpen },
+  { id: "spreadsheet", label: "Spreadsheet", icon: Table2 },
 ];
 
 export default function WorkspaceShell() {
@@ -80,6 +81,11 @@ export default function WorkspaceShell() {
   const sourceOpener = useRef<HTMLElement | null>(null);
   useEffect(() => {
     void hydrateWorkspace();
+    try {
+      setFlat(localStorage.getItem("ideate:desk-view") === "simple");
+    } catch {
+      // Keep the default desk when storage is unavailable.
+    }
     const media = matchMedia("(prefers-reduced-motion: reduce)");
     const change = () => setReducedMotion(media.matches);
     change();
@@ -99,12 +105,12 @@ export default function WorkspaceShell() {
         event.preventDefault();
         save();
       }
-      if (event.altKey && ["1", "2", "3"].includes(event.key)) {
+      if (event.altKey && ["1", "2", "3", "4"].includes(event.key)) {
         event.preventDefault();
         useWorkspace
           .getState()
           .navigate(
-            (["board", "code", "notes"] as Tool[])[Number(event.key) - 1],
+            (["board", "code", "notes", "spreadsheet"] as Tool[])[Number(event.key) - 1],
           );
       }
       if (
@@ -123,8 +129,7 @@ export default function WorkspaceShell() {
           setSource(null);
         } else if (composer) {
           useWorkspace.setState({ chatOpen: false });
-        } else if (!(event.target as HTMLElement)?.closest(".excalidraw"))
-          useWorkspace.getState().navigate("desk");
+        }
       }
     };
     window.addEventListener("keydown", onKey);
@@ -138,11 +143,30 @@ export default function WorkspaceShell() {
   }, [execution.runCode, source]);
   useEffect(() => {
     if (view === "desk" && lastTool.current) {
-      requestAnimationFrame(() =>
-        document
-          .querySelector<HTMLButtonElement>(`[data-open="${lastTool.current}"]`)
-          ?.focus({ preventScroll: true }),
-      );
+      const desk = document.querySelector(".desk-home");
+      if (!desk) return;
+      const opener = document.activeElement;
+      // 3D labels mount asynchronously; wait for the visible object button.
+      const focusObject = () => {
+        if (document.activeElement !== opener && document.activeElement !== document.body) {
+          observer.disconnect();
+          return;
+        }
+        const button = Array.from(desk.querySelectorAll<HTMLButtonElement>(
+          `[data-desk-tool="${lastTool.current}"]`,
+        )).find((element) => element.getClientRects().length > 0);
+        if (button) {
+          button.focus({ preventScroll: true });
+          observer.disconnect();
+        }
+      };
+      const observer = new MutationObserver(focusObject);
+      observer.observe(desk, { childList: true, subtree: true, attributes: true, attributeFilter: ["style"] });
+      const frame = requestAnimationFrame(focusObject);
+      return () => {
+        cancelAnimationFrame(frame);
+        observer.disconnect();
+      };
     } else if (view !== "desk") {
       lastTool.current = view;
     }
@@ -209,6 +233,7 @@ export default function WorkspaceShell() {
             open("desk");
           }}
           aria-label="Ideate, back to desk"
+          title={view === "desk" ? "Ideate" : "Back to desk"}
         >
           <svg
             width="30"
@@ -225,30 +250,13 @@ export default function WorkspaceShell() {
             />
             <circle cx="25" cy="5" r="2" fill="currentColor" />
           </svg>
-          <span>
+          <span className="brand-text">
+            <span>
             ideate<span className="brand-dot">.</span>
+            </span>
+            {view !== "desk" && <small className="brand-back">Back to desk</small>}
           </span>
         </a>
-        <nav className="tool-nav" aria-label="Workspace tools">
-          {nav.map((item) => (
-            <button
-              key={item.id}
-              className={state.page === item.id ? "active" : ""}
-              aria-label={item.label}
-              title={
-                item.id === "desk"
-                  ? "Back to desk"
-                  : `${item.label} (Alt+${["board", "code", "notes"].indexOf(item.id) + 1})`
-              }
-              aria-current={state.page === item.id ? "page" : undefined}
-              onClick={() => open(item.id)}
-              data-open={item.id}
-            >
-              <item.icon size={16} />
-              <span>{item.label}</span>
-            </button>
-          ))}
-        </nav>
         <div className="header-actions">
           <div ref={setLayoutToolbar} className="editor-layout-controls" hidden={view === "desk"} />
           <span
@@ -423,7 +431,14 @@ export default function WorkspaceShell() {
                     </div>
                     <button
                       className="view-switch"
-                      onClick={() => setFlat(!flat)}
+                      onClick={() => {
+                        setFlat(!flat);
+                        try {
+                          localStorage.setItem("ideate:desk-view", flat ? "3d" : "simple");
+                        } catch {
+                          // The preference still works for this session.
+                        }
+                      }}
                     >
                       {flat ? "Show 3D desk" : "Use simple view"}
                     </button>
@@ -431,18 +446,18 @@ export default function WorkspaceShell() {
                   <div className="scene-container">
                     {flat ? (
                       <div className="flat-desk">
-                        {nav
-                          .filter((item) => item.id !== "desk")
-                          .map((item) => (
-                            <button key={item.id} onClick={() => open(item.id)}>
+                        {deskTools.map((item, index) => (
+                            <button key={item.id} onClick={() => open(item.id)} data-desk-tool={item.id} aria-keyshortcuts={`Alt+${index + 1}`}>
                               <item.icon size={40} />
-                              <strong>{item.label}</strong>
+                              <strong>{item.label}<kbd className="desk-shortcut">Alt+{index + 1}</kbd></strong>
                               <span>
                                 {item.id === "board"
                                   ? "Make your thinking visible"
                                   : item.id === "code"
                                     ? "Turn a thought into an experiment"
-                                    : "Keep what you discover"}
+                                    : item.id === "spreadsheet"
+                                      ? "Work through the numbers"
+                                      : "Keep what you discover"}
                               </span>
                             </button>
                           ))}
@@ -489,6 +504,11 @@ export default function WorkspaceShell() {
                     debugCode={execution.debugCode}
                     debugSession={execution.debugSession}
                     resumeDebug={execution.resumeDebug}
+                  />
+                ) : tool === "spreadsheet" ? (
+                  <SpreadsheetPanel
+                    key={`${data.id}-${state.editorEpochs.spreadsheet}`}
+                    visible={visible}
                   />
                 ) : (
                   <NotePanel
@@ -564,7 +584,7 @@ export default function WorkspaceShell() {
             <button
               className="button primary"
               onClick={() => {
-                open(source.tool);
+                useWorkspace.getState().navigate(source.tool, { reveal: true });
                 if (data[source.tool].revision === source.revision)
                   setTimeout(() => adapters[source.tool]?.reveal(source), 100);
                 setSource(null);

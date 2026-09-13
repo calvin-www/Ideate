@@ -16,6 +16,20 @@ function proposal(jobId = "voice-job"): Proposal {
   return { id: jobId, jobId, target: "code", baseRevision: 0, summary: "Write a line", sources: [], sourceRevisions: {}, replacements: [{ from: 0, to: 0, text: "low = 0\n" }] };
 }
 
+it("keeps spreadsheet proposals atomic while speech is playing", async () => {
+  const change: Proposal = { ...proposal(), target: "spreadsheet" };
+  const text = JSON.stringify({ cells: { A1: { raw: "=SUM(B1:B3)" } } });
+  const playing = presentChange(change, text, new AbortController().signal, 100);
+  // A spreadsheet has no progressive text preview: partial JSON is never shown or saved.
+  expect(usePresentation.getState().current).toBeNull();
+  expect(checkpointPresentation()).toBe(false);
+  expect(useWorkspace.getState().data.spreadsheet.text).toBe("");
+  let completed = false;
+  void playing.then(() => { completed = true; });
+  await Promise.resolve();
+  expect(completed).toBe(true);
+});
+
 it("keeps exactly the visible lines as one undoable change when interrupted", async () => {
   const initial = useWorkspace.getState().data;
   const change = { ...proposal(), replacements: [{ from: 0, to: 0, text: "def search(values):\n    low = 0\n    return low\n" }] };

@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { goToTool } from "./desk-navigation";
 import { test, expect, type Page } from "@playwright/test";
 import type { Workspace } from "../../src/features/workspace/model";
 
@@ -27,10 +28,7 @@ async function openBoard(page: Page) {
 }
 
 async function navigate(page: Page, name: string) {
-  await page
-    .getByRole("navigation", { name: "Workspace tools" })
-    .getByRole("button", { name, exact: true })
-    .click();
+  await goToTool(page, name);
 }
 async function snapshot(page: Page): Promise<Workspace> {
   const downloading = page.waitForEvent("download");

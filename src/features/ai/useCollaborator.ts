@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useWorkspace } from "../workspace/store";
 import { adapters } from "../workspace/adapters";
 import { buildBoardPatch } from "../board/adapter";
+import { parseSheet, serializeSheet, patchSheet, evaluateSheet, type CellUpdate } from "../spreadsheet/sheet";
 import {
   applyProposal,
   checkProposal,
@@ -169,6 +170,34 @@ function boardExcerpt(elements: BoardElement[], ids?: string[]) {
   };
 }
 
+type SpreadsheetReadCell = { address: string; raw: string; format?: string; calculated: string | number };
+function spreadsheetCellSource(cells: SpreadsheetReadCell[]) {
+  return cells.map(cell => `${cell.address}: ${cell.raw} (calculated: ${cell.calculated}; format: ${cell.format ?? "general"})`).join("\n");
+}
+function spreadsheetExcerpt(text: string, fromRow = 1, toRow = 200, overview = false, afterAddress?: string) {
+  const sheet = parseSheet(text);
+  const calculated = evaluateSheet(sheet);
+  const end = overview ? 200 : Math.min(toRow, fromRow + 39);
+  const compare = (a: string, b: string) => Number(a.slice(1)) - Number(b.slice(1)) || a.localeCompare(b);
+  const all = Object.entries(sheet.cells).sort(([a], [b]) => compare(a, b));
+  const relevant = all.filter(([address]) => Number(address.slice(1)) >= fromRow && Number(address.slice(1)) <= end && (!afterAddress || compare(address, afterAddress) > 0));
+  const cells: SpreadsheetReadCell[] = [];
+  const encoder = new TextEncoder();
+  for (const [address, cell] of relevant) {
+    const next = [...cells, { address, ...cell, calculated: calculated[address] }];
+    // Include the duplicated source excerpt and JSON escaping in the UTF-8 budget.
+    const bytes = encoder.encode(JSON.stringify({ cells: next, excerpt: spreadsheetCellSource(next) })).byteLength;
+    if (cells.length && (bytes > (overview ? 16_000 : 64_000) || (overview && cells.length >= 20))) break;
+    cells.push(next[next.length - 1]);
+  }
+  const withinRangeTruncated = cells.length < relevant.length;
+  return { cells, fromRow, toRow: end, totalCells: all.length, truncated: cells.length < all.length || end < toRow,
+    ...(withinRangeTruncated && cells.length ? { nextAfterAddress: cells.at(-1)!.address } : end < toRow ? { nextRow: end + 1 } : {}) };
+}
+function spreadsheetSource(excerpt: ReturnType<typeof spreadsheetExcerpt>) {
+  return spreadsheetCellSource(excerpt.cells);
+}
+
 function makeReference(
   data: Workspace,
   tool: Tool,
@@ -186,7 +215,7 @@ function makeReference(
         ? "Whiteboard"
         : tool === "code"
           ? "Python"
-          : "Notes",
+          : tool === "spreadsheet" ? "Spreadsheet" : "Notes",
     excerpt: (
       selected?.text ??
       (tool === "board"
@@ -195,7 +224,7 @@ function makeReference(
             .map((element) => String(element.text ?? ""))
             .filter(Boolean)
             .join("\n")
-        : data[tool].text)
+        : tool === "spreadsheet" ? spreadsheetSource(spreadsheetExcerpt(data.spreadsheet.text, 1, 200, true)) : data[tool].text)
     ).slice(0, 2_000),
     ...(selected?.ids ? { ids: [...selected.ids] } : {}),
     ...(selected?.from !== undefined
@@ -236,6 +265,7 @@ function captureContext(
     : data.runs.slice(-2);
   return {
     activeTool: view,
+    spreadsheet: { id: "spreadsheet", revision: data.spreadsheet.revision, ...spreadsheetExcerpt(data.spreadsheet.text, 1, 200, true) },
     selection: selection
       ? { ...selection, text: selection.text.slice(0, 8_000) }
       : null,
@@ -461,7 +491,7 @@ export function createCollaborator(options: Options) {
             (item) => item.id === id,
           );
           if (ref) return ref;
-          if (id === "board" || id === "code" || id === "notes")
+          if (id === "board" || id === "code" || id === "notes" || id === "spreadsheet")
             return (
               job.sources.find(
                 (item) =>
@@ -494,38 +524,40 @@ export function createCollaborator(options: Options) {
           `- [${ref.label} · revision ${ref.revision}](#source:${ref.id})`,
       )
       .join("\n");
-    const proposal: Proposal = {
-      id: call.id,
-      jobId: job.id,
-      target,
-      baseRevision:
-        call.name === "link_artifacts"
-          ? data[target].revision
-          : Number(call.args.baseRevision),
-      summary: String(call.args.summary),
-      sources: linkSources ?? [...job.sources],
-      sourceRevisions: { ...job.sourceRevisions },
-      ...(target === "board"
-        ? {
-            boardPatch: {
-              additions: call.args.additions,
-              updates: call.args.updates,
-              deleteIds: call.args.deleteIds,
-            } as BoardPatch,
-          }
-        : {
-            replacements: links
-              ? [
-                  {
-                    from: data.notes.text.length,
-                    to: data.notes.text.length,
-                    text: `\n\n### Sources\n\n${links}\n`,
-                  },
-                ]
-              : (call.args.replacements as Replacement[]),
-          }),
-    };
     try {
+      const proposal: Proposal = {
+        id: call.id,
+        jobId: job.id,
+        target,
+        baseRevision:
+          call.name === "link_artifacts"
+            ? data[target].revision
+            : Number(call.args.baseRevision),
+        summary: String(call.args.summary),
+        sources: linkSources ?? [...job.sources],
+        sourceRevisions: { ...job.sourceRevisions },
+        ...(target === "board"
+          ? {
+              boardPatch: {
+                additions: call.args.additions,
+                updates: call.args.updates,
+                deleteIds: call.args.deleteIds,
+              } as BoardPatch,
+            }
+          : {
+              replacements: links
+                ? [
+                    {
+                      from: data.notes.text.length,
+                      to: data.notes.text.length,
+                      text: `\n\n### Sources\n\n${links}\n`,
+                    },
+                  ]
+                : target === "spreadsheet"
+                  ? [{ from: 0, to: data.spreadsheet.text.length, text: serializeSheet(patchSheet(parseSheet(data.spreadsheet.text), call.args.updates as CellUpdate[])) }]
+                  : (call.args.replacements as Replacement[]),
+            }),
+      };
       checkProposal(data, proposal, job.id);
       const preview =
         target === "board"
@@ -621,6 +653,14 @@ export function createCollaborator(options: Options) {
     } else if (call.name === "clear_attention") {
       useWorkspace.getState().clearAttention(args.target as Tool | undefined);
       result = { status: "cleared" };
+    } else if (call.name === "read_spreadsheet") {
+      const excerpt = spreadsheetExcerpt(data.spreadsheet.text, args.fromRow as number | undefined, args.toRow as number | undefined, false, args.afterAddress as string | undefined);
+      const source = rememberSource(job, "spreadsheet", data, {
+        ...makeReference(data, "spreadsheet"),
+        ids: excerpt.cells.map(cell => cell.address),
+        excerpt: spreadsheetSource(excerpt),
+      });
+      result = { id: "spreadsheet", revision: data.spreadsheet.revision, ...excerpt, source };
     } else if (call.name === "read_code" || call.name === "read_notes") {
       const tool = call.name === "read_code" ? "code" : "notes";
       const range = textExcerpt(
@@ -908,7 +948,7 @@ export function createCollaborator(options: Options) {
     );
     const sources = [
       source,
-      ...(["board", "code", "notes"] as const)
+      ...(["board", "code", "notes", "spreadsheet"] as const)
         .filter((tool) => tool !== source.tool || source.runId)
         .map((tool) => makeReference(initial.data, tool)),
     ];
@@ -940,6 +980,7 @@ export function createCollaborator(options: Options) {
         board: initial.data.board.revision,
         code: initial.data.code.revision,
         notes: initial.data.notes.revision,
+        spreadsheet: initial.data.spreadsheet.revision,
         ...(source.runId ? {} : { [source.tool]: source.revision }),
       },
       review: null,
@@ -1085,7 +1126,7 @@ export function createCollaborator(options: Options) {
       !state.data.messages.some(
         (message) => message.id === paused.job.assistantId,
       ) ||
-      (["board", "code", "notes"] as const).some(
+      (["board", "code", "notes", "spreadsheet"] as const).some(
         (tool) => state.data[tool] !== paused.snapshot[tool],
       )
     ) {

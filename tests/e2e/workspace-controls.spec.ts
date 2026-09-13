@@ -1,11 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
+import { goToTool } from "./desk-navigation";
 
 test.use({ reducedMotion: "reduce" });
 
 async function openComputer(page: Page) {
   await page.goto("/");
   await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
-  await page.getByRole("navigation", { name: "Workspace tools" }).getByRole("button", { name: "Computer", exact: true }).click();
+  await goToTool(page, "Computer");
   await expect(page.getByRole("region", { name: "Python workspace", exact: true })).toBeVisible();
 }
 
@@ -24,7 +25,7 @@ test("header controls leave the full tool area available and chat opens only by 
   const editorBox = (await page.getByRole("region", { name: "Python workspace", exact: true }).boundingBox())!;
   expect(editorBox.y - headerBox.y - headerBox.height).toBeLessThan(3);
   expect(editorBox.y + editorBox.height).toBeGreaterThan(995);
-  await expect(page.getByRole("button", { name: "Back to desk", exact: true })).toHaveCount(0);
+  await expect(header.getByRole("link", { name: "Ideate, back to desk", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Explain visually", exact: true })).toHaveCount(0);
   const composer = page.getByRole("textbox", { name: "Ask your study partner", exact: true });
   await expect(composer).toBeHidden();
@@ -36,9 +37,9 @@ test("header controls leave the full tool area available and chat opens only by 
   await page.screenshot({ path: test.info().outputPath("desktop-controls.png") });
 });
 
-test("saving and storage errors keep navigation and dock geometry stable", async ({ page }) => {
+test("saving and storage errors keep desk navigation and dock geometry stable", async ({ page }) => {
   await openComputer(page);
-  const navigation = page.getByRole("navigation", { name: "Workspace tools" });
+  const navigation = page.getByRole("link", { name: "Ideate, back to desk", exact: true });
   const dock = page.getByRole("region", { name: "Python workspace", exact: true });
   const navBefore = await navigation.boundingBox();
   const dockBefore = await dock.boundingBox();
@@ -66,7 +67,7 @@ test(`compact controls remain reachable at ${width}px`, async ({ page }) => {
   const header = page.getByRole("banner");
   await expect(header.getByRole("button", { name: "Turn on microphone", exact: true })).toBeInViewport();
   await expect(header.getByRole("button", { name: "Toggle study partner", exact: true })).toBeInViewport();
-  await header.getByRole("navigation", { name: "Workspace tools" }).getByRole("button", { name: "Computer", exact: true }).click();
+  await goToTool(page, "Computer");
   await expect(header.getByRole("button", { name: "Editor layout", exact: true })).toBeInViewport();
   for (const control of await header.getByRole("button").all()) {
     const bounds = await control.boundingBox();
@@ -77,6 +78,10 @@ test(`compact controls remain reachable at ${width}px`, async ({ page }) => {
   await page.screenshot({ path: test.info().outputPath(`narrow-controls-${width}.png`) });
   await header.getByRole("button", { name: "Editor layout", exact: true }).click();
   await expect(page.getByRole("dialog", { name: "Editor layout options" })).toBeInViewport();
+  const menuBounds = (await page.getByRole("dialog", { name: "Editor layout options" }).boundingBox())!;
+  expect(menuBounds.x).toBeGreaterThanOrEqual(12);
+  expect(menuBounds.x + menuBounds.width).toBeLessThanOrEqual(width - 12);
+  await page.screenshot({ path: test.info().outputPath(`narrow-layout-${width}.png`) });
   await page.keyboard.press("Escape");
   await header.getByRole("button", { name: "Toggle study partner", exact: true }).click();
   await expect(page.getByRole("textbox", { name: "Ask your study partner", exact: true })).toBeVisible();

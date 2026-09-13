@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { goToTool } from "./desk-navigation";
 import { test as base, expect, type Page } from "@playwright/test";
 import type { Workspace } from "../../src/features/workspace/model";
 
@@ -34,10 +35,7 @@ async function navigate(
   page: Page,
   name: "Desk" | "Whiteboard" | "Computer" | "Journal",
 ) {
-  await page
-    .getByRole("navigation", { name: "Workspace tools" })
-    .getByRole("button", { name, exact: true })
-    .click();
+  await goToTool(page, name);
 }
 
 function pythonPanel(page: Page) {

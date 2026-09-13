@@ -1,0 +1,34 @@
+.panel { display: flex; flex-direction: column; height: 100%; min-height: 0; width: 100%; overflow: hidden; background: #fafaf7; color: #26382f; }
+.panel[hidden] { display: none; }
+.toolbar { min-height: 56px; padding: 8px 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border-bottom: 1px solid #e3e6dc; background: #f8f9f3; flex-wrap: wrap; }
+.title { font-size: 13px; font-weight: 600; color: #425b49; }
+.actions { display: flex; align-items: center; gap: 6px; }
+.panel button, .panel select { font: inherit; font-size: 12px; color: #425b49; background: transparent; border: 1px solid #dce3d7; border-radius: 5px; padding: 6px 8px; cursor: pointer; }
+.panel button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
+.panel button:hover { background: #e9eee0; }
+.panel button:disabled { opacity: .35; cursor: default; }
+.panel button:focus-visible, .panel select:focus-visible, .footer summary:focus-visible { outline: 2px solid #53774d; outline-offset: 2px; }
+.formulaBar { display: flex; align-items: center; min-height: 39px; border-bottom: 1px solid #dce3d7; background: white; }
+.formulaBar output { min-width: 84px; padding: 10px; border-right: 1px solid #dce3d7; font-size: 12px; text-align: center; }
+.formulaBar > span { padding: 0 12px; color: #778370; font-family: Georgia, serif; font-style: italic; }
+.formulaBar input { width: 100%; min-width: 0; background: transparent; border: 0; padding: 10px 8px; font: inherit; font-size: 13px; color: #26382f; }
+.formulaBar input:focus { outline: 2px solid #53774d; outline-offset: -2px; }
+.scroller { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.grid { border-collapse: separate; border-spacing: 0; table-layout: fixed; background: white; font-size: 12px; }
+.grid th, .grid td { padding: 0; border-right: 1px solid #e3e6dc; border-bottom: 1px solid #e3e6dc; min-width: 112px; width: 112px; height: 29px; }
+.grid th { background: #f1f4ec; color: #71806b; font-size: 11px; font-weight: 500; text-align: center; }
+.grid thead th { position: sticky; top: 0; z-index: 2; }
+.grid tr > th:first-child { position: sticky; left: 0; min-width: 42px; width: 42px; z-index: 1; }
+.grid thead th:first-child { z-index: 3; }
+.grid input { display: block; width: 112px; height: 29px; padding: 5px 8px; border: 0; border-radius: 0; background: transparent; font: inherit; color: #26382f; }
+.grid input:focus { outline: 2px solid #53774d; outline-offset: -2px; background: #fff; }
+.grid .selected { background: #edf3e7; }
+.numeric { text-align: right; font-variant-numeric: tabular-nums; }
+.footer { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 8px 14px; padding: 8px 12px; border-top: 1px solid #dce3d7; color: #71806b; font-size: 11px; }
+.footer > div { display: flex; gap: 5px; }
+.footer button { font-size: 11px; border: 0; }
+.footer details { position: relative; }
+.footer summary { cursor: pointer; }
+.footer p { position: absolute; right: 0; bottom: 20px; width: 245px; padding: 15px; background: #f8f9f3; border: 1px solid #dce3d7; box-shadow: 0 4px 14px #26382f15; line-height: 1.7; z-index: 4; }
+.error { margin: 0; padding: 8px 14px; font-size: 12px; color: #8e4534; background: #fff2ed; }
+@container (max-width: 440px) { .toolbar { padding: 8px; } .title { display: none; } .footer > span { display: none; } }

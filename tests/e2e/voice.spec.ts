@@ -1,4 +1,5 @@
 import { test, expect, type Page, type WebSocketRoute } from "@playwright/test";
+import { goToTool } from "./desk-navigation";
 import { writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -80,7 +81,7 @@ test("Stop checkpoints writing, stops speech, and turns off microphone capture",
   }));
   await page.goto("/");
   await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
-  await page.getByRole("navigation", { name: "Workspace tools" }).getByRole("button", { name: "Computer", exact: true }).click();
+  await goToTool(page, "Computer");
   expect(await page.evaluate(() => (window as unknown as { capturedTracks: MediaStreamTrack[] }).capturedTracks.length)).toBe(0);
   await page.getByRole("button", { name: "Turn on microphone", exact: true }).click();
   await expect(page.getByRole("region", { name: "Voice controls", exact: true })).toContainText("Listening");
@@ -133,16 +134,15 @@ test("a hidden notes destination can be shown in Preview mode and committed once
   }));
   await page.goto("/");
   await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
-  const navigation = page.getByRole("navigation", { name: "Workspace tools" });
-  await navigation.getByRole("button", { name: "Journal", exact: true }).click();
+  await goToTool(page, "Journal");
   await page.getByRole("region", { name: "Study journal", exact: true }).getByRole("textbox").fill("# Existing notes\n" + Array.from({ length: 60 }, (_, i) => `Observation ${i + 1}\n`).join(""));
   await page.getByRole("tab", { name: "Preview", exact: true }).click();
-  await navigation.getByRole("button", { name: "Computer", exact: true }).click();
+  await goToTool(page, "Computer");
   const before = await exportedWorkspace(page);
   await page.getByRole("button", { name: "Turn on microphone", exact: true }).click();
   await expect(page.getByRole("region", { name: "Voice controls" })).toContainText("Listening");
   say("Record the observation in my notes.");
-  await navigation.getByRole("button", { name: "Journal", exact: true }).click();
+  await goToTool(page, "Journal");
   const preview = page.getByLabel("Study partner writing preview", { exact: true });
   await expect(preview).toContainText("# Voice observation");
   await expect(preview.locator(".cm-line").filter({ hasText: "# Voice observation" })).toBeInViewport();
@@ -173,7 +173,7 @@ test("board updates and deletions replace the provisional scene and preserve can
   });
   await page.goto("/");
   await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
-  await page.getByRole("navigation", { name: "Workspace tools" }).getByRole("button", { name: "Whiteboard", exact: true }).click();
+  await goToTool(page, "Whiteboard");
   await page.getByRole("button", { name: "Load binary search example", exact: true }).click();
   await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
   const before = await exportedWorkspace(page);
@@ -206,7 +206,7 @@ test("a board pen stroke grows during speech and taking over interrupts it", asy
   }));
   await page.goto("/");
   await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
-  await page.getByRole("navigation", { name: "Workspace tools" }).getByRole("button", { name: "Whiteboard", exact: true }).click();
+  await goToTool(page, "Whiteboard");
   await expect(page.getByRole("button", { name: "Load binary search example", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Turn on microphone", exact: true }).click();
   const controls = page.getByRole("region", { name: "Voice controls" });
@@ -319,7 +319,7 @@ test("interrupting speech keeps the partial function and resumes the unfinished 
   });
   await page.goto("/");
   await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
-  await page.getByRole("navigation", { name: "Workspace tools" }).getByRole("button", { name: "Computer", exact: true }).click();
+  await goToTool(page, "Computer");
   await expect(page.getByRole("region", { name: "Python workspace", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Turn on microphone", exact: true }).click();
   await expect(page.getByRole("region", { name: "Voice controls" })).toContainText("Listening");

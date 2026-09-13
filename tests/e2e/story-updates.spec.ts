@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { goToTool } from "./desk-navigation";
 import { test, expect, type Page } from "@playwright/test";
 import type { Workspace } from "../../src/features/workspace/model";
 
@@ -14,10 +15,7 @@ function codePanel(page: Page) {
   return page.getByRole("region", { name: "Python workspace", exact: true });
 }
 async function navigate(page: Page, name: string) {
-  await page
-    .getByRole("navigation", { name: "Workspace tools" })
-    .getByRole("button", { name, exact: true })
-    .click();
+  await goToTool(page, name);
 }
 async function editCode(page: Page, code: string) {
   const editor = codePanel(page).getByRole("textbox");

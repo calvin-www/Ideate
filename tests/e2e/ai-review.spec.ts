@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { goToTool } from "./desk-navigation";
 import { test as base, expect, type Page } from "@playwright/test";
 import type {
   ArtifactRef,
@@ -121,10 +122,7 @@ async function openJournal(page: Page) {
   await expect(page.getByText("Saved locally", { exact: true })).toBeVisible({
     timeout: 30_000,
   });
-  await page
-    .getByRole("navigation", { name: "Workspace tools" })
-    .getByRole("button", { name: "Journal", exact: true })
-    .click();
+  await goToTool(page, "Journal");
   await expect(journal(page).getByRole("textbox")).toBeVisible();
   await page
     .getByRole("button", { name: "Toggle study partner", exact: true })
@@ -391,10 +389,7 @@ test("an AI board proposal renders a real preview, applies editable elements, an
     }),
   ]);
   await openJournal(page);
-  await page
-    .getByRole("navigation", { name: "Workspace tools" })
-    .getByRole("button", { name: "Whiteboard", exact: true })
-    .click();
+  await goToTool(page, "Whiteboard");
   const board = page.getByRole("region", {
     name: "Whiteboard tool",
     exact: true,
@@ -471,10 +466,7 @@ for (const autoApply of [false, true]) {
       autoApply ? [drawing] : [drawing, drawing],
     );
     await openJournal(page);
-    await page
-      .getByRole("navigation", { name: "Workspace tools" })
-      .getByRole("button", { name: "Whiteboard", exact: true })
-      .click();
+    await goToTool(page, "Whiteboard");
     const before = (await snapshot(page)).board.elements;
     if (autoApply) {
       await partner(page)

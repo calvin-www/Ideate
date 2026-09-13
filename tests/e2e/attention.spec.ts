@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { arrange, goToTool } from "./desk-navigation";
 import { test, expect, type Page } from "@playwright/test";
 import type { Workspace } from "../../src/features/workspace/model";
 
@@ -64,10 +65,7 @@ async function open(page: Page, domain: "Computer" | "Whiteboard" | "Journal") {
     .click();
 }
 async function navigate(page: Page, name: string) {
-  await page
-    .getByRole("navigation", { name: "Workspace tools" })
-    .getByRole("button", { name, exact: true })
-    .click();
+  await goToTool(page, name);
 }
 async function ask(page: Page) {
   const composer = page.getByRole("textbox", {
@@ -176,7 +174,7 @@ for (const domain of ["Computer", "Journal"] as const) {
   });
 }
 
-for (const origin of ["Computer", "Journal", "Desk"]) {
+for (const origin of ["Computer", "Journal", "Desk", "Narrow"]) {
   test(`Show from ${origin} reveals the Python source behind its output tab`, async ({
     page,
   }) => {
@@ -202,17 +200,31 @@ for (const origin of ["Computer", "Journal", "Desk"]) {
       .getByRole("region", { name: "Python workspace", exact: true })
       .getByRole("textbox");
     await expect(editor).toBeHidden();
-    if (origin !== "Computer") await navigate(page, origin);
+    if (origin === "Narrow") await page.setViewportSize({ width: 600, height: 850 });
+    if (origin !== "Computer" && origin !== "Narrow") await navigate(page, origin);
     await ask(page);
     await page
       .getByRole("button", { name: "Show in Python Source behind output" })
       .click();
     await expect(editor).toBeVisible();
-    expect(results.map((result) => result.visible)).toEqual([false]);
+    expect(results.map((result) => result.visible)).toEqual([origin === "Narrow"]);
     await expect(page.locator('[data-attention-target="code"]')).toBeVisible();
+    if (origin === "Narrow") {
+      await page.getByRole("button", { name: "Toggle study partner", exact: true }).click();
+      await page.setViewportSize({ width: 1440, height: 1000 });
+      await expect(editor).toBeVisible();
+      await expect(page.locator(".dv-tab")).toHaveCount(2);
+    }
+    if (origin === "Journal") {
+      await expect(page.locator(".dv-tab")).toHaveCount(0);
+      await arrange(page, "Restore previous arrangement");
+    }
     await page.getByRole("tab", { name: "Output", exact: true }).click();
     await navigate(page, "Journal");
     await navigate(page, "Computer");
+    await expect(editor).toBeVisible();
+    await expect(page.locator(".dv-tab")).toHaveCount(0);
+    await arrange(page, "Restore previous arrangement");
     await expect(editor).toBeHidden();
   });
 }
@@ -395,6 +407,10 @@ test("whiteboard cues follow zoom and pan without editing the drawing", async ({
   await page.screenshot({ path: testInfo.outputPath("board-cue.png") });
   await page.getByRole("button", { name: "Dismiss board cue" }).click();
   await expect(box).toHaveCount(0);
+  const camera = (await snapshot(page)).board.viewport;
+  await navigate(page, "Computer");
+  await navigate(page, "Whiteboard");
+  expect((await snapshot(page)).board.viewport).toEqual(camera);
   expect(errors).toEqual([]);
 });
 

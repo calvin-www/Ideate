@@ -5,6 +5,9 @@ import {
   readPageLayouts,
   PAGE_LAYOUT_STORAGE_KEY,
   LAYOUT_STORAGE_KEY,
+  PREVIOUS_ARRANGEMENT_KEY,
+  readPreviousArrangement,
+  savePreviousArrangement,
 } from "../src/features/workspace/layoutPersistence";
 import { useWorkspace } from "../src/features/workspace/store";
 
@@ -35,6 +38,24 @@ const saved = () => ({
 });
 
 describe("editor layout preferences", () => {
+  it("migrates an old arrangement and restores the latest global arrangement thereafter", () => {
+    const values = new Map([[PAGE_LAYOUT_STORAGE_KEY, JSON.stringify({ version: 1, pages: { code: saved() } })]]);
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+    });
+    try {
+      expect(readPreviousArrangement()?.layout.panels.board).toBeDefined();
+      const changed = saved();
+      changed.layout.grid.width = 980;
+      expect(savePreviousArrangement(changed as NonNullable<ReturnType<typeof readPreviousArrangement>>)).toBe(true);
+      expect(readPreviousArrangement()?.layout.grid.width).toBe(980);
+      values.set(PREVIOUS_ARRANGEMENT_KEY, "{");
+      expect(readPreviousArrangement()).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
   it("retains independent layouts and enabled modes for each header page", () => {
     const pages = parsePageLayouts(
       JSON.stringify({
@@ -165,4 +186,13 @@ it("changing focused tools does not discard visibility or revise documents", () 
   expect(useWorkspace.getState().visibleTools).toEqual(["board", "code"]);
   expect(useWorkspace.getState().selection).toBeNull();
   expect(useWorkspace.getState().data).toBe(data);
+});
+
+it("revealing the current tool retains its selection while a fresh tool launch clears shared context", () => {
+  const selection = { tool: "code" as const, revision: 0, from: 0, to: 3, text: "def" };
+  useWorkspace.setState({ view: "code", selection });
+  useWorkspace.getState().navigate("code", { reveal: true });
+  expect(useWorkspace.getState().selection).toBe(selection);
+  useWorkspace.getState().navigate("code");
+  expect(useWorkspace.getState().selection).toBeNull();
 });

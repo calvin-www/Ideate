@@ -1,4 +1,5 @@
 import { expect, test as base, type Page } from "@playwright/test";
+import { arrange, goToTool } from "./desk-navigation";
 
 const test = base.extend<{ pageErrors: string[] }>({
   pageErrors: [
@@ -19,18 +20,7 @@ async function open(page: Page, tool = "Computer") {
   await expect(page.getByText("Saved locally", { exact: true })).toBeVisible({
     timeout: 30000,
   });
-  await page
-    .getByRole("navigation", { name: "Workspace tools" })
-    .getByRole("button", { name: tool, exact: true })
-    .click();
-}
-async function layout(page: Page, action: string) {
-  await page
-    .getByRole("button", { name: "Editor layout", exact: true })
-    .click({ timeout: 10000 });
-  await page
-    .getByRole("button", { name: action, exact: true })
-    .click({ timeout: 10000 });
+  await goToTool(page, tool);
 }
 const python = (page: Page) =>
   page.getByRole("region", { name: "Python workspace", exact: true });
@@ -50,26 +40,24 @@ test("splits real editors and preserves undo when returning to the default", asy
   await editor.press("End");
   await page.keyboard.type(" # retained");
   await expect(editor).toContainText("# retained");
-  await layout(page, "Split with Journal");
+  await arrange(page, "Split with Journal");
   await expect(python(page)).toBeVisible();
   await expect(journal(page)).toBeVisible();
   await page.screenshot({ path: test.info().outputPath("split.png") });
   const left = await python(page).boundingBox();
   const right = await journal(page).boundingBox();
   expect(left!.x + left!.width).toBeLessThanOrEqual(right!.x + 12);
-  await layout(page, "Single editor");
+  await editor.click();
+  await arrange(page, "Show only Python");
   await expect(editor).toBeVisible();
   await expect(journal(page)).toBeHidden();
-  await page
-    .getByRole("navigation", { name: "Workspace tools" })
-    .getByRole("button", { name: "Computer", exact: true })
-    .click();
+  await goToTool(page, "Computer");
   await expect(journal(page)).toBeHidden();
   await expect(editor).toContainText("# retained");
   await editor.press("ControlOrMeta+z");
   await expect(editor).toContainText("before layout");
   await expect(editor).not.toContainText("# retained");
-  await layout(page, "Restore saved layout");
+  await arrange(page, "Restore previous arrangement");
   await expect(journal(page)).toBeVisible();
 });
 
@@ -77,7 +65,7 @@ test("floats Python above the board and restores its bounds after maximizing", a
   page,
 }) => {
   await open(page, "Whiteboard");
-  await layout(page, "Float Python");
+  await arrange(page, "Float Python");
   await expect(python(page)).toBeVisible();
   await expect(
     page.getByRole("region", { name: "Whiteboard tool", exact: true }),
@@ -118,13 +106,13 @@ test("floats Python above the board and restores its bounds after maximizing", a
     .getByRole("button", { name: "Maximize Python", exact: true })
     .click();
   await expect(
-    page.getByRole("button", { name: "Restore layout", exact: true }),
+    page.getByRole("button", { name: "Restore arrangement", exact: true }),
   ).toBeVisible();
   const maximized = await python(page).boundingBox();
   await page.screenshot({ path: test.info().outputPath("maximized.png") });
   expect(maximized!.width).toBeGreaterThan(before!.width + 100);
   await page
-    .getByRole("button", { name: "Restore layout", exact: true })
+    .getByRole("button", { name: "Restore arrangement", exact: true })
     .click();
   await expect
     .poll(async () =>
@@ -136,10 +124,9 @@ test("floats Python above the board and restores its bounds after maximizing", a
   ).toBeLessThan(3);
   await page.reload();
   await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
-  await page
-    .getByRole("navigation", { name: "Workspace tools" })
-    .getByRole("button", { name: "Whiteboard", exact: true })
-    .click();
+  await goToTool(page, "Whiteboard");
+  await expect(python(page)).toBeHidden();
+  await arrange(page, "Restore previous arrangement");
   await expect
     .poll(async () =>
       Math.abs((await python(page).boundingBox())!.width - before!.width),
@@ -156,7 +143,7 @@ test("persists resized splits and falls back to the single editor on narrow scre
   page,
 }) => {
   await open(page);
-  await layout(page, "Split with Journal");
+  await arrange(page, "Split with Journal");
   const before = await python(page).boundingBox();
   const divider = page
     .locator(
@@ -180,15 +167,14 @@ test("persists resized splits and falls back to the single editor on narrow scre
   const resized = await python(page).boundingBox();
   await expect
     .poll(() =>
-      page.evaluate(() => localStorage.getItem("ideate:page-layouts:v1")),
+      page.evaluate(() => localStorage.getItem("ideate:previous-arrangement:v1")),
     )
     .not.toBeNull();
   await page.reload();
   await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
-  await page
-    .getByRole("navigation", { name: "Workspace tools" })
-    .getByRole("button", { name: "Computer", exact: true })
-    .click();
+  await goToTool(page, "Computer");
+  await expect(journal(page)).toBeHidden();
+  await arrange(page, "Restore previous arrangement");
   await expect(journal(page)).toBeVisible();
   await expect
     .poll(async () =>
@@ -203,23 +189,20 @@ test("persists resized splits and falls back to the single editor on narrow scre
   await page.setViewportSize({ width: 1440, height: 1000 });
   await expect(journal(page)).toBeVisible();
   await page.setViewportSize({ width: 600, height: 850 });
-  await page
-    .getByRole("navigation", { name: "Workspace tools" })
-    .getByRole("button", { name: "Whiteboard", exact: true })
-    .click();
-  await page
-    .getByRole("navigation", { name: "Workspace tools" })
-    .getByRole("button", { name: "Computer", exact: true })
-    .click();
+  await goToTool(page, "Whiteboard");
+  await goToTool(page, "Computer");
   await page.setViewportSize({ width: 1440, height: 1000 });
+  await expect(page.locator(".dv-tab")).toHaveCount(0);
+  await expect(journal(page)).toBeHidden();
+  await arrange(page, "Restore previous arrangement");
   await expect(page.locator(".dv-tab")).toHaveCount(2);
   await expect(python(page)).toBeVisible();
   await expect(journal(page)).toBeVisible();
 });
 
-test("returning to Computer retains its resized split", async ({ page }) => {
+test("returning to Computer opens alone and explicit restore retains its resized split", async ({ page }) => {
   await open(page);
-  await layout(page, "Split with Whiteboard");
+  await arrange(page, "Split with Whiteboard");
   const divider = await page
     .locator(
       ".dv-split-view-container.dv-horizontal > .dv-sash-container > .dv-sash",
@@ -238,13 +221,10 @@ test("returning to Computer retains its resized split", async ({ page }) => {
   await page.mouse.up();
   const before = await python(page).boundingBox();
   const editor = await python(page).getByRole("textbox").elementHandle();
-  const navigation = page.getByRole("navigation", { name: "Workspace tools" });
-  await navigation
-    .getByRole("button", { name: "Whiteboard", exact: true })
-    .click();
-  await navigation
-    .getByRole("button", { name: "Computer", exact: true })
-    .click();
+  await goToTool(page, "Whiteboard");
+  await goToTool(page, "Computer");
+  await expect(page.locator(".dv-tab")).toHaveCount(0);
+  await arrange(page, "Restore previous arrangement");
   await expect(
     page.getByRole("tab", { name: "Whiteboard", exact: true }),
   ).toBeVisible();
@@ -258,10 +238,10 @@ test("returning to Computer retains its resized split", async ({ page }) => {
       .getByRole("textbox")
       .evaluate((element, previous) => element === previous, editor),
   ).toBe(true);
-  await navigation.getByRole("button", { name: "Desk", exact: true }).click();
-  await navigation
-    .getByRole("button", { name: "Computer", exact: true })
-    .click();
+  await goToTool(page, "Desk");
+  await goToTool(page, "Computer");
+  await expect(page.locator(".dv-tab")).toHaveCount(0);
+  await arrange(page, "Restore previous arrangement");
   await expect
     .poll(async () =>
       Math.abs((await python(page).boundingBox())!.width - before!.width),
@@ -269,83 +249,72 @@ test("returning to Computer retains its resized split", async ({ page }) => {
     .toBeLessThan(3);
 });
 
-test("header pages remember independent split, floating, and tabbed arrangements", async ({
+test("tools share one explicitly restored split, floating, or tabbed arrangement", async ({
   page,
 }) => {
   await open(page);
-  const navigation = page.getByRole("navigation", { name: "Workspace tools" });
-  const go = (name: string) =>
-    navigation.getByRole("button", { name, exact: true }).click();
-  await layout(page, "Split with Journal");
+  await arrange(page, "Split with Journal");
   const computerWidth = (await python(page).boundingBox())!.width;
-  await expect(
-    navigation.getByRole("button", { name: "Computer", exact: true }),
-  ).toHaveAttribute("aria-current", "page");
-  await go("Whiteboard");
+  await goToTool(page, "Whiteboard");
   await expect(page.locator(".dv-tab")).toHaveCount(0);
   await expect(python(page)).toBeHidden();
-  await layout(page, "Float Python");
-  const floating = await python(page).boundingBox();
-  await expect(
-    navigation.getByRole("button", { name: "Whiteboard", exact: true }),
-  ).toHaveAttribute("aria-current", "page");
-  await go("Journal");
-  await expect(page.locator(".dv-tab")).toHaveCount(0);
-  expect((await journal(page).boundingBox())!.width).toBeGreaterThan(1300);
-  await layout(page, "Tab with Whiteboard");
-  await expect(
-    navigation.getByRole("button", { name: "Journal", exact: true }),
-  ).toHaveAttribute("aria-current", "page");
-  await go("Computer");
+  await arrange(page, "Restore previous arrangement");
   await expect(journal(page)).toBeVisible();
-  await expect(page.locator(".dv-floating-titlebar")).toHaveCount(0);
   await expect
     .poll(async () =>
       Math.abs((await python(page).boundingBox())!.width - computerWidth),
     )
     .toBeLessThan(3);
-  await go("Desk");
-  await go("Whiteboard");
+
+  await goToTool(page, "Whiteboard");
+  await arrange(page, "Float Python");
+  const floating = await python(page).boundingBox();
+  await goToTool(page, "Journal");
+  await expect(page.locator(".dv-tab")).toHaveCount(0);
+  expect((await journal(page).boundingBox())!.width).toBeGreaterThan(1300);
+  await arrange(page, "Restore previous arrangement");
   await expect(page.locator(".dv-floating-titlebar")).toBeVisible();
+  await expect(journal(page)).toBeHidden();
   await expect
     .poll(async () =>
       Math.abs((await python(page).boundingBox())!.width - floating!.width),
     )
     .toBeLessThan(3);
+
+  await goToTool(page, "Journal");
+  await arrange(page, "Tab with Whiteboard");
+  await goToTool(page, "Computer");
+  await expect(page.locator(".dv-tab")).toHaveCount(0);
+  await expect(journal(page)).toBeHidden();
+  await arrange(page, "Restore previous arrangement");
+  await expect(page.getByRole("tab", { name: "Journal", exact: true })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Whiteboard", exact: true })).toBeVisible();
+  await expect(python(page)).toBeHidden();
+  await expect(page.locator(".dv-floating-titlebar")).toHaveCount(0);
+
   await page.reload();
   await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
-  await go("Journal");
-  await expect(
-    page.getByRole("tab", { name: "Journal", exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.getByRole("tab", { name: "Whiteboard", exact: true }),
-  ).toBeVisible();
-  await expect(page.locator(".dv-floating-titlebar")).toHaveCount(0);
-  await go("Whiteboard");
-  await expect(page.locator(".dv-floating-titlebar")).toBeVisible();
-  await layout(page, "Reset layout");
+  await goToTool(page, "Computer");
   await expect(page.locator(".dv-tab")).toHaveCount(0);
-  await expect(
-    page.getByRole("region", { name: "Whiteboard tool", exact: true }),
-  ).toBeVisible();
+  await arrange(page, "Restore previous arrangement");
+  await page.getByRole("tab", { name: "Journal", exact: true }).click();
+  await arrange(page, "Show only Journal");
+  await expect(page.locator(".dv-tab")).toHaveCount(0);
+  await expect(journal(page)).toBeVisible();
   await expect(python(page)).toBeHidden();
-  await go("Computer");
-  await expect(python(page)).toBeVisible();
-  await expect(journal(page)).toBeVisible();
-  await layout(page, "Single editor");
-  await go("Whiteboard");
-  await go("Computer");
-  await expect(page.locator(".dv-tab")).toHaveCount(0);
-  await layout(page, "Restore saved layout");
-  await expect(journal(page)).toBeVisible();
+  await goToTool(page, "Desk");
+  await goToTool(page, "Whiteboard");
+  await expect(journal(page)).toBeHidden();
+  await arrange(page, "Restore previous arrangement");
+  await expect(page.getByRole("tab", { name: "Journal", exact: true })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Whiteboard", exact: true })).toBeVisible();
 });
 
 test("docks a floating editor and keeps single mode after hiding the last panel", async ({
   page,
 }) => {
   await open(page, "Whiteboard");
-  await layout(page, "Float Python");
+  await arrange(page, "Float Python");
   await page.getByRole("button", { name: "Dock Python", exact: true }).click();
   await expect(python(page)).toBeVisible();
   await expect(page.locator(".dv-floating-titlebar")).toHaveCount(0);
@@ -354,23 +323,21 @@ test("docks a floating editor and keeps single mode after hiding the last panel"
     .click();
   await page.getByRole("button", { name: "Hide Python", exact: true }).click();
   await expect(page.locator(".dv-tab")).toHaveCount(0);
+  await expect(python(page)).toBeVisible();
   await expect
     .poll(() =>
-      page.evaluate(
-        () =>
-          JSON.parse(localStorage.getItem("ideate:page-layouts:v1")!).pages
-            .board.enabled,
+      page.evaluate(() =>
+        JSON.parse(localStorage.getItem("ideate:previous-arrangement:v1")!).enabled,
       ),
     )
     .toBe(false);
   await page.reload();
   await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
-  await page
-    .getByRole("navigation", { name: "Workspace tools" })
-    .getByRole("button", { name: "Computer", exact: true })
-    .click();
+  await goToTool(page, "Computer");
   await expect(python(page)).toBeVisible();
   await expect(page.locator(".dv-tab")).toHaveCount(0);
+  await arrange(page, "Restore previous arrangement");
+  await expect(page.getByRole("tab", { name: "Python", exact: true })).toBeVisible();
 });
 
 test("drags editors into a tab group without recreating the editor", async ({
@@ -378,7 +345,7 @@ test("drags editors into a tab group without recreating the editor", async ({
 }) => {
   await open(page);
   const original = await python(page).getByRole("textbox").elementHandle();
-  await layout(page, "Split with Journal");
+  await arrange(page, "Split with Journal");
   const tab = page.getByRole("tab", { name: "Python", exact: true });
   const source = await page
     .getByRole("tab", { name: "Journal", exact: true })
@@ -434,13 +401,16 @@ test("Python keeps running while its editor is split, floated, and maximized", a
     .click();
   const output = python(page).getByLabel("Python output", { exact: true });
   await expect(output).toContainText("tick 0", { timeout: 30000 });
-  await layout(page, "Split with Journal");
+  await goToTool(page, "Journal");
+  await goToTool(page, "Computer");
+  await expect(output).toContainText("tick");
+  await arrange(page, "Split with Journal");
   await page.getByRole("button", { name: "Float Python", exact: true }).click();
   await page
     .getByRole("button", { name: "Maximize Python", exact: true })
     .click();
   await page
-    .getByRole("button", { name: "Restore layout", exact: true })
+    .getByRole("button", { name: "Restore arrangement", exact: true })
     .click();
   await expect(output).toContainText("layout-finished", { timeout: 30000 });
   expect(

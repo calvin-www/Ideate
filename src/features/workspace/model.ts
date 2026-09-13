@@ -1,11 +1,12 @@
 import { z } from "zod";
+import { parseSheet } from "../spreadsheet/sheet";
 import {
   boardFilesSchema,
   checkImageReferences,
   type BoardFiles,
 } from "../board/images";
 
-export type Tool = "board" | "code" | "notes";
+export type Tool = "board" | "code" | "notes" | "spreadsheet";
 export type View = Tool | "desk";
 export type BoardElement = {
   id: string;
@@ -81,6 +82,7 @@ export type Workspace = {
   title: string;
   code: { id: "code"; revision: number; text: string };
   notes: { id: "notes"; revision: number; text: string };
+  spreadsheet: { id: "spreadsheet"; revision: number; text: string };
   board: {
     id: "board";
     revision: number;
@@ -119,6 +121,7 @@ export function createWorkspace(): Workspace {
       text: "# Binary search\n\n## What I want to understand\n\nWhy is it safe to discard half the array?\n\n## Observations\n\nWrite down a prediction, then try it in Python.\n",
     },
     board: { id: "board", revision: 0, elements: [], files: {} },
+    spreadsheet: { id: "spreadsheet", revision: 0, text: "" },
     runs: [],
     messages: [],
     changes: [],
@@ -168,9 +171,10 @@ export function compactWorkspace(data: Workspace): Workspace {
 
 export function editText(
   data: Workspace,
-  target: "code" | "notes",
+  target: "code" | "notes" | "spreadsheet",
   text: string,
 ): Workspace {
+  if (target === "spreadsheet") parseSheet(text);
   if (data[target].text === text) return data;
   return {
     ...data,
@@ -249,6 +253,7 @@ export function applyProposal(
       : replaceRanges(data[target].text, proposal.replacements ?? []);
   if (after === undefined)
     throw new Error("The board preview could not be prepared.");
+  if (target === "spreadsheet") parseSheet(after as string);
   const revision = data[target].revision + 1;
   const artifact =
     target === "board"
@@ -455,7 +460,7 @@ const elementSchema = z
   });
 const refSchema = z.object({
   id: z.string(),
-  tool: z.enum(["board", "code", "notes"]),
+  tool: z.enum(["board", "code", "notes", "spreadsheet"]),
   revision: revisionSchema,
   label: z.string(),
   excerpt: z.string().max(250_000),
@@ -490,6 +495,11 @@ const workspaceSchema = z.object({
   schemaVersion: z.literal(1),
   id: z.string(),
   title: z.string().max(100),
+  spreadsheet: z.object({
+    id: z.literal("spreadsheet"),
+    revision: revisionSchema,
+    text: z.string().max(200_000),
+  }).default({ id: "spreadsheet", revision: 0, text: "" }),
   code: z.object({
     id: z.literal("code"),
     revision: revisionSchema,
@@ -529,7 +539,7 @@ const workspaceSchema = z.object({
     .array(
       z.object({
         id: z.string(),
-        target: z.enum(["board", "code", "notes"]),
+        target: z.enum(["board", "code", "notes", "spreadsheet"]),
         summary: z.string(),
         before: snapshotSchema,
         after: snapshotSchema,
@@ -545,6 +555,7 @@ const workspaceSchema = z.object({
 });
 export function validateWorkspace(value: unknown): Workspace {
   const data = workspaceSchema.parse(value) as Workspace;
+  parseSheet(data.spreadsheet.text);
   if (
     new Set(data.board.elements.map((e) => e.id)).size !==
     data.board.elements.length
@@ -561,6 +572,10 @@ export function validateWorkspace(value: unknown): Workspace {
     if (change.target === "board") {
       checkImageReferences(change.before as BoardElement[], data.board.files);
       checkImageReferences(change.after as BoardElement[], data.board.files);
+    }
+    if (change.target === "spreadsheet") {
+      parseSheet(change.before as string);
+      parseSheet(change.after as string);
     }
   }
   return data;

@@ -45,7 +45,7 @@
 .openIcon {
   color: #839279;
   font:
-    15px/1 system-ui,
+    10px/1 system-ui,
     sans-serif;
 }
 .labelDetail {
@@ -90,7 +90,7 @@
 }
 .fallbackObjects {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   align-items: start;
   gap: 26px;
   width: 100%;
@@ -106,6 +106,19 @@
   text-align: left;
   color: #2d4638;
   cursor: pointer;
+}
+.spreadsheetFallback .fallbackPreview {
+  border: 6px solid #315d47;
+  border-radius: 5px;
+  background: #faf9f0;
+}
+.sheetGrid {
+  display: block;
+  flex: 1;
+  min-height: 90px;
+  margin-top: 12px;
+  background-image: linear-gradient(#b6c5ad 1px, transparent 1px), linear-gradient(90deg, #b6c5ad 1px, transparent 1px);
+  background-size: 25% 22px;
 }
 .fallbackObject:focus-visible {
   outline: 3px solid #31583e;

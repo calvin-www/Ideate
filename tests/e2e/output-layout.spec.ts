@@ -1,4 +1,5 @@
 import { expect, test as base, type Page } from "@playwright/test";
+import { arrange, goToTool } from "./desk-navigation";
 
 const test = base.extend<{ pageErrors: string[] }>({
   pageErrors: [
@@ -21,10 +22,7 @@ test.beforeEach(async ({ page }) => {
   await computer(page);
 });
 const computer = (page: Page) =>
-  page
-    .getByRole("navigation", { name: "Workspace tools" })
-    .getByRole("button", { name: "Computer", exact: true })
-    .click();
+  goToTool(page, "Computer");
 const source = (page: Page) =>
   page
     .getByRole("region", { name: "Python workspace", exact: true })
@@ -196,7 +194,7 @@ test("floating output keeps streaming and can be moved, resized, and maximized",
   await expect(source(page)).toBeHidden();
   await expect(output(page)).toBeVisible();
   await page
-    .getByRole("button", { name: "Restore layout", exact: true })
+    .getByRole("button", { name: "Restore arrangement", exact: true })
     .click();
   await expect
     .poll(async () =>
@@ -214,17 +212,17 @@ test("floating output keeps streaming and can be moved, resized, and maximized",
   await expect(output(page)).toContainText("Output cleared");
 });
 
-test("navigation and reload restore Computer's separate output layout", async ({
+test("explicit restore recovers separate output after navigation and reload", async ({
   page,
 }) => {
   await move(page, "Move output right");
   const before = await output(page).boundingBox();
-  await page
-    .getByRole("navigation", { name: "Workspace tools" })
-    .getByRole("button", { name: "Whiteboard", exact: true })
-    .click();
+  await goToTool(page, "Whiteboard");
   await expect(output(page)).toBeHidden();
   await computer(page);
+  await expect(page.locator(".dv-tab")).toHaveCount(0);
+  await expect(source(page)).toBeVisible();
+  await arrange(page, "Restore previous arrangement");
   await expect
     .poll(async () =>
       Math.abs((await output(page).boundingBox())!.width - before!.width),
@@ -236,6 +234,8 @@ test("navigation and reload restore Computer's separate output layout", async ({
   await page.reload();
   await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
   await computer(page);
+  await expect(page.locator(".dv-tab")).toHaveCount(0);
+  await arrange(page, "Restore previous arrangement");
   await expect(page.locator(".dv-tab")).toHaveCount(2);
   await expect(output(page)).toBeVisible();
   await page.setViewportSize({ width: 600, height: 850 });
@@ -261,11 +261,15 @@ test("output can share a tab group and stays usable when its editor is hidden", 
   await move(page, "Tab with editor");
   await expect(editor).toBeHidden();
   await expect(output(page)).toBeVisible();
-  const navigation = page.getByRole("navigation", { name: "Workspace tools" });
   await computer(page);
+  await expect(editor).toBeVisible();
+  await expect(page.locator(".dv-tab")).toHaveCount(0);
+  await arrange(page, "Restore previous arrangement");
   await expect(editor).toBeHidden();
-  await navigation.getByRole("button", { name: "Desk", exact: true }).click();
+  await goToTool(page, "Desk");
   await computer(page);
+  await expect(editor).toBeVisible();
+  await arrange(page, "Restore previous arrangement");
   await expect(editor).toBeHidden();
   await expect(output(page)).toBeVisible();
   await page.getByRole("tab", { name: "Python", exact: true }).click();
@@ -277,8 +281,10 @@ test("output can share a tab group and stays usable when its editor is hidden", 
   await page.getByRole("button", { name: "Hide Python", exact: true }).click();
   await expect(editor).toBeHidden();
   await expect(output(page)).toContainText("tabbed output");
-  await navigation.getByRole("button", { name: "Desk", exact: true }).click();
+  await goToTool(page, "Desk");
   await computer(page);
+  await expect(editor).toBeVisible();
+  await arrange(page, "Restore previous arrangement");
   await expect(editor).toBeHidden();
   await expect(page.locator(".dv-tab")).toHaveCount(1);
   await move(page, "Move output left");

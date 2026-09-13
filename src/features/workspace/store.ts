@@ -42,7 +42,7 @@ type Store = {
   editorEpochs: Record<Tool, number>;
   setData: (update: (data: Workspace) => Workspace) => void;
   navigate: (view: View, options?: { reveal?: boolean }) => void;
-  setText: (target: "code" | "notes", text: string) => void;
+  setText: (target: "code" | "notes" | "spreadsheet", text: string) => void;
   setBoard: (elements: BoardElement[], files?: BoardFiles) => void;
 };
 export const useWorkspace = create<Store>((set, get) => ({
@@ -79,11 +79,11 @@ export const useWorkspace = create<Store>((set, get) => ({
   notice: "",
   boardPreview: "",
   attention: {},
-  editorEpochs: { board: 0, code: 0, notes: 0 },
+  editorEpochs: { board: 0, code: 0, notes: 0, spreadsheet: 0 },
   clearData: (scope) => {
     const current = get();
     const editorEpochs = { ...current.editorEpochs };
-    for (const tool of ["board", "code", "notes"] as const)
+    for (const tool of ["board", "code", "notes", "spreadsheet"] as const)
       if (scope === "all" || scope === tool) editorEpochs[tool]++;
     if (scope === "all") current.setAutoApplyChanges(true);
     set({
@@ -118,7 +118,7 @@ export const useWorkspace = create<Store>((set, get) => ({
       page: view,
       navigationEpoch: get().navigationEpoch + 1,
       navigationReveal: options?.reveal && view !== "desk" ? view : null,
-      selection: null,
+      selection: options?.reveal && get().view === view ? get().selection : null,
       visited:
         view === "desk"
           ? get().visited

@@ -14,6 +14,7 @@ import {
 import ReactMarkdown, { type Components } from "react-markdown";
 import { mathRemarkPlugins, mathRehypePlugins } from "../markdown/math";
 import { diffLines } from "diff";
+import { parseSheet, evaluateSheet, formatCell } from "../spreadsheet/sheet";
 import { useWorkspace } from "../workspace/store";
 import {
   undoChange,
@@ -77,6 +78,22 @@ function BoardPreview({ elements }: { elements: BoardElement[] }) {
     <p>Preparing board preview…</p>
   );
 }
+export function SpreadsheetDiff({ before, after }: { before: string; after: string }) {
+  const previous = parseSheet(before), next = parseSheet(after);
+  const oldValues = evaluateSheet(previous), newValues = evaluateSheet(next);
+  const addresses = [...new Set([...Object.keys(previous.cells), ...Object.keys(next.cells)])]
+    .filter(address => JSON.stringify(previous.cells[address]) !== JSON.stringify(next.cells[address]))
+    .sort((a, b) => Number(a.slice(1)) - Number(b.slice(1)) || a.localeCompare(b));
+  const describe = (sheet: typeof previous, values: typeof oldValues, address: string) => {
+    const cell = sheet.cells[address];
+    return cell ? `${cell.raw} → ${formatCell(values[address], cell.format)} (${cell.format ?? "general"})` : "Empty";
+  };
+  return <div className="code-diff" role="region" aria-label="Spreadsheet cell changes">
+    <table><thead><tr><th>Cell</th><th>Before</th><th>After</th></tr></thead>
+      <tbody>{addresses.map(address => <tr key={address}><th>{address}</th><td className="removed">{describe(previous, oldValues, address)}</td><td className="added">{describe(next, newValues, address)}</td></tr>)}</tbody>
+    </table>
+  </div>;
+}
 export default function ChatPanel({ collaborator, onReference }: Props) {
   const markdownComponents = useMemo<Components>(
     () => ({
@@ -138,6 +155,7 @@ export default function ChatPanel({ collaborator, onReference }: Props) {
     board: "whiteboard",
     code: "Python",
     notes: "notes",
+    spreadsheet: "spreadsheet",
   };
   return (
     <aside className="chat-panel" aria-label="AI study partner">
@@ -146,8 +164,8 @@ export default function ChatPanel({ collaborator, onReference }: Props) {
           <Sparkles size={18} />
         </div>
         <div>
-          <strong>Your study partner</strong>
-          <span>Here to think it through with you</span>
+          <strong>buddy buddy</strong>
+          <span>everyone loves buddy buddy</span>
         </div>
         <button
           className="icon-button"
@@ -184,7 +202,7 @@ export default function ChatPanel({ collaborator, onReference }: Props) {
         >
           <p>
             Clear this conversation? Any active reply will stop. Your board,
-            code, notes, and saved changes stay.
+            code, notes, spreadsheet, and saved changes stay.
           </p>
           <div className="proposal-actions">
             <button
@@ -218,8 +236,7 @@ export default function ChatPanel({ collaborator, onReference }: Props) {
                 type="button"
                 onClick={() => {
                   const state = useWorkspace.getState();
-                  if (!state.visibleTools.includes(cue.target))
-                    state.navigate(cue.target, { reveal: true });
+                  state.navigate(cue.target, { reveal: true });
                   useWorkspace.setState({
                     attention: { ...state.attention, [cue.target]: { ...cue } },
                   });
@@ -308,7 +325,9 @@ export default function ChatPanel({ collaborator, onReference }: Props) {
               </strong>
             </div>
             <p>{pending.proposal.summary}</p>
-            {typeof pending.preview === "string" ? (
+            {pending.proposal.target === "spreadsheet" && typeof pending.preview === "string" ? (
+              <SpreadsheetDiff before={data.spreadsheet.text} after={pending.preview} />
+            ) : typeof pending.preview === "string" ? (
               <pre className="code-diff">
                 {diffLines(
                   data[pending.proposal.target === "notes" ? "notes" : "code"]
@@ -358,7 +377,9 @@ export default function ChatPanel({ collaborator, onReference }: Props) {
               change. Restoring replaces those later edits. This restore will
               also be undoable.
             </p>
-            {typeof inverse.current === "string" &&
+            {inverse.change.target === "spreadsheet" && typeof inverse.current === "string" && typeof inverse.change.before === "string" ? (
+              <SpreadsheetDiff before={inverse.current} after={inverse.change.before} />
+            ) : typeof inverse.current === "string" &&
             typeof inverse.change.before === "string" ? (
               <pre className="code-diff">
                 {diffLines(inverse.current, inverse.change.before).map(
@@ -440,6 +461,7 @@ export default function ChatPanel({ collaborator, onReference }: Props) {
       </div>
       {lastChange && (
         <div className="undo-strip">
+          {lastChange.target === "spreadsheet" && <button onClick={() => useWorkspace.getState().navigate("spreadsheet", { reveal: true })}>Open spreadsheet</button>}
           <button
             disabled={!!pending}
             onClick={() => {
@@ -479,7 +501,7 @@ export default function ChatPanel({ collaborator, onReference }: Props) {
           <div className="context-chip">
             <span>
               {selection.runId ? "Python output" : toolNames[selection.tool]} ·{" "}
-              {selection.ids ? `${selection.ids.length} elements` : "selection"}
+              {selection.ids ? `${selection.ids.length} ${selection.tool === "spreadsheet" ? "cells" : "elements"}` : "selection"}
             </span>
             <button
               type="button"

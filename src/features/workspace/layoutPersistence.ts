@@ -6,8 +6,9 @@ export const toolTitles: Record<Tool, string> = {
   board: "Whiteboard",
   code: "Python",
   notes: "Journal",
+  spreadsheet: "Spreadsheet",
 };
-export const tools: Tool[] = ["board", "code", "notes"];
+export const tools: Tool[] = ["board", "code", "notes", "spreadsheet"];
 export const isTool = (id: unknown): id is Tool => tools.includes(id as Tool);
 export type EditorPanel = Tool | "output";
 export const panelIds: EditorPanel[] = [...tools, "output"];
@@ -26,6 +27,28 @@ export type LayoutPreference = {
 };
 export const PAGE_LAYOUT_STORAGE_KEY = "ideate:page-layouts:v1";
 export type PageLayouts = Partial<Record<Tool, LayoutPreference>>;
+
+export const PREVIOUS_ARRANGEMENT_KEY = "ideate:previous-arrangement:v1";
+
+/** Old page arrangements remain recoverable, but are never opened implicitly. */
+export function readPreviousArrangement(): LayoutPreference | null {
+  try {
+    const raw = localStorage.getItem(PREVIOUS_ARRANGEMENT_KEY);
+    if (raw !== null) return parseLayoutPreference(raw);
+    return Object.values(readPageLayouts())[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function savePreviousArrangement(preference: LayoutPreference): boolean {
+  try {
+    localStorage.setItem(PREVIOUS_ARRANGEMENT_KEY, JSON.stringify(preference));
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 export function parsePageLayouts(raw: string | null): PageLayouts {
   if (!raw || raw.length > 100000) return {};
@@ -107,7 +130,7 @@ export function parseLayoutPreference(
     if (layout.edgeGroups) return null;
     const panels = object(layout.panels);
     const ids = Object.keys(panels);
-    if (!ids.length || ids.length > 4 || !ids.every(isEditorPanel)) return null;
+    if (!ids.length || ids.length > panelIds.length || !ids.every(isEditorPanel)) return null;
     const cleanPanels: SerializedDockview["panels"] = {};
     for (const id of ids) {
       const panel = object(panels[id]);
@@ -156,7 +179,7 @@ export function parseLayoutPreference(
       if (
         data.type !== "branch" ||
         !Array.isArray(data.data) ||
-        data.data.length > 4
+        data.data.length > panelIds.length
       )
         throw new Error("Invalid layout branch");
       return {
@@ -183,7 +206,7 @@ export function parseLayoutPreference(
     if (layout.floatingGroups !== undefined) {
       if (
         !Array.isArray(layout.floatingGroups) ||
-        layout.floatingGroups.length > 4
+        layout.floatingGroups.length > panelIds.length
       )
         return null;
       clean.floatingGroups = layout.floatingGroups.map((value) => {

@@ -76,6 +76,8 @@ export function takeOverPresentation() {
 export async function presentChange(proposal: Proposal, preview: string | BoardElement[], signal: AbortSignal, durationMs: number): Promise<void> {
   signal.throwIfAborted();
   clearPresentation();
+  // Cell patches commit together after speech; never animate serialized sheet data.
+  if (proposal.target === "spreadsheet") return;
   const initial = useWorkspace.getState().data;
   const reduced = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
   await new Promise<void>((resolve, reject) => {

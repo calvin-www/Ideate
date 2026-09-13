@@ -9,6 +9,7 @@ const labels: Record<ClearScope, string> = {
   board: "whiteboard",
   code: "Python",
   notes: "notes",
+  spreadsheet: "spreadsheet",
 };
 
 export default function WorkspaceDataControls({
@@ -70,7 +71,7 @@ export default function WorkspaceDataControls({
             <h3>Clear {labels[scope]}?</h3>
             <p>
               {scope === "all"
-                ? "This removes the whiteboard, Python, notes, chat, saved runs, source excerpts, and undo history from this workspace. Auto-apply returns to its default: on."
+                ? "This removes the whiteboard, Python, notes, spreadsheet, chat, saved runs, source excerpts, and undo history from this workspace. Auto-apply returns to its default: on."
                 : `This empties your ${labels[scope]} and removes its undo history${scope === "code" ? " and saved Python runs" : ""}. Other documents, chat, and their saved source excerpts stay.`}
             </p>
             <p>
@@ -107,7 +108,7 @@ export default function WorkspaceDataControls({
           <>
             <p>Make room for a new idea. Choose what to clear.</p>
             <div className={styles.domains}>
-              {(["board", "code", "notes"] as const).map((target) => (
+              {(["board", "code", "notes", "spreadsheet"] as const).map((target) => (
                 <button
                   key={target}
                   type="button"

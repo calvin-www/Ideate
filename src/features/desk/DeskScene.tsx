@@ -25,7 +25,7 @@ import {
 } from "three";
 import styles from "./DeskScene.module.css";
 
-type Tool = "board" | "code" | "notes";
+import type { Tool } from "../workspace/model";
 type Triple = [number, number, number];
 
 export interface DeskSceneProps {
@@ -41,6 +41,7 @@ const OBJECTS = {
   board: { name: "Whiteboard", detail: "Make the idea visible", key: "1" },
   code: { name: "Computer", detail: "Put it into practice", key: "2" },
   notes: { name: "Journal", detail: "Keep what clicks", key: "3" },
+  spreadsheet: { name: "Spreadsheet", detail: "Work through the numbers", key: "4" },
 };
 const CAMERA_POSITION = new Vector3(8.6, 8.5, 12.8);
 const CAMERA_LOOK_AT = new Vector3(0, 0.6, 0);
@@ -48,6 +49,7 @@ const OBJECT_POSITION: Record<Tool, Vector3> = {
   board: new Vector3(-3.55, 1.5, -1.55),
   code: new Vector3(0.35, 1.7, -1.4),
   notes: new Vector3(3.1, 0.2, 1.65),
+  spreadsheet: new Vector3(3.25, 0.2, -0.65),
 };
 const NO_RAYCAST = () => null;
 
@@ -115,6 +117,22 @@ function usePreviewTexture(kind: Tool, content: string, status?: string) {
 
         ctx.fillStyle = kind === "notes" ? "#f6efd9" : "#faf9f0";
         ctx.fillRect(0, 0, 1200, 760);
+        if (kind === "spreadsheet") {
+          ctx.fillStyle = "#315d47";
+          ctx.fillRect(0, 0, 1200, 100);
+          ctx.fillStyle = "#faf9f0";
+          ctx.font = "38px Georgia, serif";
+          ctx.fillText("Spreadsheet", 50, 65);
+          ctx.strokeStyle = "#b6c5ad";
+          ctx.lineWidth = 2;
+          for (let x = 50; x <= 1150; x += 220) {
+            ctx.beginPath(); ctx.moveTo(x, 130); ctx.lineTo(x, 710); ctx.stroke();
+          }
+          for (let y = 130; y <= 710; y += 58) {
+            ctx.beginPath(); ctx.moveTo(50, y); ctx.lineTo(1150, y); ctx.stroke();
+          }
+          return;
+        }
         if (kind === "notes") {
           ctx.strokeStyle = "#dcd7c1";
           ctx.lineWidth = 1.6;
@@ -324,6 +342,8 @@ function ObjectLabel({
         type="button"
         className={`${styles.objectLabel} ${active ? styles.objectLabelActive : ""}`}
         aria-label={`Open ${object.name}`}
+        aria-keyshortcuts={`Alt+${object.key}`}
+        title={`Open ${object.name} (Alt+${object.key})`}
         onClick={() => onOpen(tool)}
         onPointerEnter={() => onHover(tool)}
         onPointerLeave={() => onHover(null)}
@@ -334,7 +354,7 @@ function ObjectLabel({
         <span className={styles.labelName}>
           {object.name}
           <span aria-hidden="true" className={styles.openIcon}>
-            ↗
+            Alt+{object.key}
           </span>
         </span>
         <span className={styles.labelDetail}>{object.detail}</span>
@@ -358,6 +378,7 @@ function SceneObjects({
   const wood = useWoodTexture();
   const code = usePreviewTexture("code", codePreview, runStatus);
   const paper = usePreviewTexture("notes", notePreview);
+  const ledger = usePreviewTexture("spreadsheet", "");
   const board = useBoardTexture(boardPreview);
   const hit = (tool: Tool) => ({
     onClick: (event: ThreeEvent<MouseEvent>) => {
@@ -582,7 +603,21 @@ function SceneObjects({
         />
       </group>
 
+      <group position={[3.25, 0.06, -0.65]} rotation={[0, -0.12, 0]} {...hit("spreadsheet")}>
+        <Block size={[2.6, 0.12, 1.65]} color={active === "spreadsheet" ? "#78906a" : "#315d47"} radius={0.06} />
+        <mesh position={[0, 0.07, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <planeGeometry args={[2.44, 1.5]} />
+          <meshBasicMaterial map={ledger} toneMapped={false} />
+        </mesh>
+      </group>
       <DeskAccessories />
+      <ObjectLabel
+        tool="spreadsheet"
+        position={[3.5, 0.25, -0.95]}
+        active={active === "spreadsheet"}
+        onOpen={onOpen}
+        onHover={onHover}
+      />
       <ObjectLabel
         tool="board"
         position={[-3.45, 0.23, 0.2]}
@@ -711,7 +746,7 @@ function DeskAccessories() {
         </mesh>
       </group>
 
-      <group position={[3.08, -0.02, -0.32]} rotation={[0, -0.13, 0]}>
+      <group position={[1.65, -0.02, -0.45]} rotation={[0, -0.13, 0]}>
         <Block
           size={[0.85, 0.05, 0.8]}
           color="#dfcc87"
@@ -829,13 +864,14 @@ export function DeskFallback({
   return (
     <div className={styles.fallback}>
       <div className={styles.fallbackObjects}>
-        {(["board", "code", "notes"] as const).map((tool) => (
+        {(["board", "code", "notes", "spreadsheet"] as const).map((tool) => (
           <button
             type="button"
             key={tool}
             className={`${styles.fallbackObject} ${styles[`${tool}Fallback`]}`}
             onClick={() => onOpen(tool)}
             data-desk-tool={tool}
+            aria-keyshortcuts={`Alt+${OBJECTS[tool].key}`}
           >
             <span className={styles.fallbackPreview} aria-hidden="true">
               {tool === "board" ? (
@@ -854,6 +890,11 @@ export function DeskFallback({
                     {runStatus || "Python is ready"}
                   </span>
                 </>
+              ) : tool === "spreadsheet" ? (
+                <>
+                  <span className={styles.paperHeading}>Work through the numbers</span>
+                  <span className={styles.sheetGrid} />
+                </>
               ) : (
                 <>
                   <span className={styles.paperHeading}>
@@ -868,7 +909,7 @@ export function DeskFallback({
             </span>
             <span className={styles.fallbackName}>
               {OBJECTS[tool].name}
-              <span aria-hidden="true">↗</span>
+              <span aria-hidden="true">Alt+{OBJECTS[tool].key}</span>
             </span>
             <span className={styles.fallbackDetail}>
               {OBJECTS[tool].detail}

@@ -204,30 +204,6 @@ export default function BoardEditor({ active }: { active: boolean }) {
         </div>
         <button
           className="button quiet"
-          onClick={async () => {
-            if (
-              board.elements.some((e) => !e.isDeleted) &&
-              !window.confirm(
-                "Replace the board with the binary search example?",
-              )
-            )
-              return;
-            useWorkspace.getState().setBoard(await sampleBoard());
-            setTimeout(
-              () =>
-                api?.scrollToContent(undefined, {
-                  fitToViewport: true,
-                  viewportZoomFactor: 0.75,
-                  animate: false,
-                }),
-              50,
-            );
-          }}
-        >
-          Load binary search example
-        </button>
-        <button
-          className="button quiet"
           onClick={() => {
             const preview = usePresentation.getState().current;
             const elements = preview?.proposal.target === "board"

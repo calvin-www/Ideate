@@ -4,7 +4,7 @@
 
 Use a 3D overview for orientation and identity, then open full-size DOM editing interfaces. Users should not type into perspective-distorted surfaces in the scene.
 
-Navigation has five states: desk, opening a tool, active tool, switching tools, and returning to desk. Only one tool is visible at a time. AI jobs and Python runs belong to the workspace and may continue while the user changes views.
+The desk opens one tool at a time. Layout can arrange multiple tools in the same workspace; returning through a desk object always opens only the selected tool. AI jobs and Python runs belong to the workspace and may continue while the user changes views.
 
 ## Desk composition
 
@@ -26,13 +26,15 @@ One soft key light, ambient fill, and inexpensive contact shadows are sufficient
 - Hover and keyboard focus add a clear outline. Touch opens directly and never depends on hover.
 - Use generous hit targets; decorative geometry must not intercept object clicks.
 - Show one initial instruction: "Choose an object to start."
-- Keep a **Desk / Board / Code / Notes** navigation bar available in every view.
+- Use the logo with its **Back to desk** label as the return path; desk objects are the visible tool navigation.
 - Opening an object uses a short camera move and crossfade, targeting about 250 ms, then shows the full-size tool.
-- Switching tools from the navigation bar goes directly to the next editor.
+- Alt+1/2/3 opens Whiteboard/Computer/Journal alone, matching the desk objects. Show these shortcuts on object labels.
 - A visible **Back to desk** control returns to the overview without resetting content.
 - Rapid navigation must settle on the most recent user choice; animation completion cannot reopen an older destination.
 
 The scene should stop rendering while an opaque tool interface covers it. Return transitions must not delay the availability of navigation controls.
+
+Layout offers beside/below placements first, with tabs and floating panes under **More arrangements**. **Show only [tool]** keeps the focused tool; **Restore previous arrangement** recovers the last arrangement explicitly. Selecting desk objects never automatically restores a saved layout. Content, editor history, cursor, scroll, journal mode, and board camera remain in the mounted editors. Output returns to its embedded location when Computer opens alone. Following an artifact reference reveals its tool without discarding an active arrangement.
 
 ## Whiteboard
 
@@ -85,7 +87,7 @@ Provide Apply/Reject for proposals, Apply & Run for code, Stop for an active AI 
 | Run Python                     | Ctrl/Cmd+Enter when Code is active and focus is outside the chat composer                                                               |
 | Flush local save               | Ctrl/Cmd+S within the workspace                                                                                                         |
 | Switch to Board / Code / Notes | Alt+1 / Alt+2 / Alt+3; user configuration is not implemented                                                                            |
-| Escape                         | Close a source dialog or focused chat composer; otherwise return to desk outside Excalidraw's own controls and consumed editor commands |
+| Escape                         | Dismiss the current menu/dialog, exit maximization, or close the focused chat composer; never navigate to the desk |
 | Navigate objects               | Ordinary Tab order through named DOM buttons; Enter/Space opens the tool                                                                |
 
 Scope handlers so chat, Excalidraw, editor commands, browser shortcuts, and text composition do not conflict. Expose visible alternatives to every shortcut.
@@ -97,6 +99,8 @@ Restore the prior editor focus, selection, and scroll position when reopening it
 Respect `prefers-reduced-motion`: use an immediate view change or brief opacity transition without camera travel.
 
 Desktop is the main editing target. Below a 680 px scene-container width, or when WebGL is unavailable, use large object cards with the same labels, previews, and navigation. The chat becomes a drawer below 800 px. On intermediate sizes, retain the desk only if all objects remain clear and easy to activate.
+
+Remember the user's simple/3D desk preference across reloads. A narrow viewport temporarily shows one editor without replacing the recoverable desktop arrangement.
 
 Show one tool at a time, stack code and output, and collapse chat into a drawer. Editing must remain available if the scene fails, loses its graphics context, or performs poorly.
 

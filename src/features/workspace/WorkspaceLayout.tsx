@@ -18,8 +18,8 @@ import {
   isEditorPanel,
   panelTool,
   type EditorPanel,
-  readPageLayouts,
-  savePageLayouts,
+  readPreviousArrangement,
+  savePreviousArrangement,
   type LayoutPreference,
 } from "./layoutPersistence";
 import {
@@ -37,6 +37,7 @@ const labels: Record<EditorPanel, string> = {
   board: "Whiteboard tool",
   code: "Python tool",
   notes: "Notebook tool",
+  spreadsheet: "Spreadsheet tool",
   output: "Output tool",
 };
 type Props = {
@@ -50,15 +51,10 @@ export default function WorkspaceLayout({ toolbar, renderEditor }: Props) {
   const visited = useWorkspace((s) => s.visited);
   const navigationEpoch = useWorkspace((s) => s.navigationEpoch);
   const navigationReveal = useWorkspace((s) => s.navigationReveal);
-  const [preferences] = useState(readPageLayouts);
-  const pages = useRef(preferences);
-  const owner = useRef<Tool | null>(isTool(page) ? page : null);
-  const [layoutPage, setLayoutPage] = useState(owner.current);
-  const saved = useRef<LayoutPreference | null>(
-    owner.current ? (preferences[owner.current] ?? null) : null,
-  );
-  // Each header page starts with one editor and remembers its own optional arrangement.
-  const [enabled, setEnabled] = useState(saved.current?.enabled ?? false);
+  const [preference] = useState(readPreviousArrangement);
+  const saved = useRef<LayoutPreference | null>(preference);
+  // Desk objects launch a single tool. Arrangements are restored only on request.
+  const [enabled, setEnabled] = useState(false);
   const handledNavigation = useRef(navigationEpoch);
   const enabledRef = useRef(enabled);
   enabledRef.current = enabled;
@@ -102,18 +98,14 @@ export default function WorkspaceLayout({ toolbar, renderEditor }: Props) {
 
   const persist = useCallback(() => {
     clearTimeout(timer.current);
-    if (owner.current) {
-      if (saved.current) pages.current[owner.current] = saved.current;
-      else delete pages.current[owner.current];
-    }
-    if (!savePageLayouts(pages.current))
+    if (saved.current && !savePreviousArrangement(saved.current))
       useWorkspace.setState({
         notice:
           "Layout changed for this session. Browser storage is unavailable.",
       });
   }, []);
   const capture = useCallback(() => {
-    if (controller.current?.api.panels.length) {
+    if (enabledRef.current && controller.current?.api.panels.length) {
       const layout = controller.current.capture();
       if (layout.grid.width > 0 && layout.grid.height > 0)
         saved.current = { version: 1, enabled: enabledRef.current, layout };
@@ -166,34 +158,28 @@ export default function WorkspaceLayout({ toolbar, renderEditor }: Props) {
   useLayoutEffect(() => {
     if (handledNavigation.current === navigationEpoch) return;
     handledNavigation.current = navigationEpoch;
-    if (page !== "desk" && owner.current === page) {
-      if (advanced) {
-        const activePanel = controller.current?.api.activePanel?.id;
-        // Header navigation preserves the active tab; Show actions explicitly reveal a tool.
-        controller.current?.focus(
-          navigationReveal ?? (isEditorPanel(activePanel) ? activePanel : page),
-        );
-      }
+    if (navigationReveal) {
+      // References reveal a pane in the current arrangement, including from the desk.
+      if (advanced) controller.current?.focus(navigationReveal);
+      else if (enabledRef.current) initialFocus.current = navigationReveal;
       return;
     }
     capture();
     persist();
     if (page === "desk") return;
-    owner.current = page;
-    saved.current = pages.current[page] ?? null;
-    initialLayout.current = saved.current?.layout ?? null;
-    initialFocus.current =
-      saved.current?.enabled && !narrow ? navigationReveal : null;
-    setLayoutPage(page);
-    setEnabled(saved.current?.enabled ?? false);
+    initialLayout.current = null;
+    initialFocus.current = null;
+    enabledRef.current = false;
+    if (saved.current) saved.current = { ...saved.current, enabled: false };
+    setEnabled(false);
     setDockState(null);
     setStart(undefined);
+    persist();
   }, [
     navigationEpoch,
     navigationReveal,
     page,
     advanced,
-    narrow,
     capture,
     persist,
   ]);
@@ -246,23 +232,17 @@ export default function WorkspaceLayout({ toolbar, renderEditor }: Props) {
   function singleEditor() {
     capture();
     if (saved.current) saved.current = { ...saved.current, enabled: false };
+    enabledRef.current = false;
     setEnabled(false);
     setDockState(null);
     setStart(undefined);
-    if (owner.current) useWorkspace.getState().focusTool(owner.current);
-    persist();
-  }
-  function reset() {
-    saved.current = null;
-    initialLayout.current = null;
-    setStart(undefined);
-    setEnabled(false);
-    setDockState(null);
-    if (owner.current) useWorkspace.getState().focusTool(owner.current);
+    useWorkspace.getState().focusTool(panelTool(focusedPanel));
     persist();
   }
   function restoreSaved() {
+    if (!saved.current) return;
     initialLayout.current = saved.current?.layout ?? null;
+    initialFocus.current = null;
     setStart(undefined);
     setDockState(null);
     setEnabled(true);
@@ -312,7 +292,6 @@ export default function WorkspaceLayout({ toolbar, renderEditor }: Props) {
         <div ref={single} className={styles.single} hidden={advanced} />
         {advanced && (
           <DockedEditors
-            key={layoutPage}
             hosts={hosts}
             park={park}
             initialLayout={initialLayout.current}
@@ -342,7 +321,6 @@ export default function WorkspaceLayout({ toolbar, renderEditor }: Props) {
               hasSaved={Boolean(saved.current)}
               open={open}
               single={singleEditor}
-              reset={reset}
               restoreSaved={restoreSaved}
               maximize={() => controller.current?.maximize(focusedPanel)}
               restore={() => controller.current?.restore()}

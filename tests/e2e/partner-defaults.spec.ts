@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { goToTool } from "./desk-navigation";
 
 test.use({ reducedMotion: "reduce" });
 
@@ -9,8 +10,7 @@ test("study partner opens only by its button and remembers an auto-apply opt-out
   await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
   await expect(partner).toHaveCount(0);
   await expect(toggle).toHaveAttribute("aria-expanded", "false");
-  await page.getByRole("navigation", { name: "Workspace tools" })
-    .getByRole("button", { name: "Journal", exact: true }).click();
+  await goToTool(page, "Journal");
   await expect(partner).toHaveCount(0);
 
   await toggle.click();
@@ -18,8 +18,7 @@ test("study partner opens only by its button and remembers an auto-apply opt-out
   await expect(autoApply).toBeChecked();
   await autoApply.uncheck();
   await partner.getByRole("button", { name: "Close study partner", exact: true }).click();
-  await page.getByRole("navigation", { name: "Workspace tools" })
-    .getByRole("button", { name: "Computer", exact: true }).click();
+  await goToTool(page, "Computer");
   await expect(partner).toHaveCount(0);
 
   await page.reload();
