@@ -20,6 +20,10 @@ npm run dev
 
 Open **http://localhost:3000**. The same command starts the separate Python runner at `http://localhost:3001`. Both listen on loopback. Use the same app hostname consistently because browser saves belong to that origin.
 
+For voice, also set `ELEVENLABS_API_KEY` and `ELEVENLABS_VOICE_ID` in `.env.local`, then restart the server. Choose **Start voice** and allow microphone access. Gemini remains the study partner; ElevenLabs handles live transcription and speech. The partner speaks while whiteboard strokes or editor lines appear. **Show Whiteboard/Python/Notes** brings an active writing step into view.
+
+Voice follows the existing **Auto-apply changes** preference. With review enabled, say “apply it” or use **Apply** to start a proposed step. Speak to interrupt, or use **Pause speech and writing**; completed steps stay saved and the unfinished preview disappears. Say “continue” or use **Resume explanation** to continue from the current work. **Mute microphone** stops transcription, and **End voice session** releases the microphone and speech playback. Text chat remains available. This first version paces visuals by short spoken steps; exact word timing and microphone interruption sensitivity still need real-device tuning.
+
 For an optimized local run:
 
 ```sh
@@ -46,6 +50,8 @@ Chat and journal previews render LaTeX equations with `$...$`, display `$$` bloc
 Work is saved in IndexedDB in this browser. Export a JSON workspace for a portable backup. Python and Markdown also have individual downloads. No account or cloud sync is required.
 
 The header's Whiteboard, Computer, and Journal buttons always open one full-size editor. Use **Layout** to split beside or below another editor, combine editors into tabs, or float an editor above the workspace. Drag tab headers to rearrange editors, drag floating title bars to move them, and resize at dividers or window edges. Group controls let you dock, maximize, or hide an editor. **Restore layout** (or Escape while maximized) returns to the prior arrangement. **Single editor** keeps your arrangement available under **Restore saved layout**; **Reset layout** removes that preference. Arrangements are stored separately from documents in this browser. Editor undo history and running Python survive layout changes. Narrow windows use one editor while retaining the desktop arrangement. Separate browser popout windows are not included.
+
+Python's **Output** header also has a **Move output** control. Place output beside, above, or below the source, add it as a tab, or float it independently. Drag its tab to rearrange it with other workspace panels. **Return output to editor** restores the embedded output area. Output continues updating while detached, and its arrangement is included in saved layouts.
 
 The whiteboard accepts PNG, JPEG, and WebP files by drag-and-drop, screenshot paste, or the image tool. Images remain editable and are included in local saves, workspace exports, and board previews. Each image can be up to 5 MB, with a 10 MB budget for encoded image data per board. Image files are retained for undo until you clear the whiteboard. For images from websites, download the file first and then drop it onto the board.
 
