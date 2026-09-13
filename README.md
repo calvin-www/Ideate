@@ -63,7 +63,13 @@ Open **Spreadsheet** on the desk or press **Alt+4**. Write income and expenses i
 
 The grid supports cell editing, a formula bar, Shift+arrow range selection, tab-separated paste, undo/redo, and General, Currency (USD), and Percent formats. Use `=SUM(B2:B8)` for a total or `=B1-B9` for remaining income. Supported formulas include arithmetic, parentheses, cell references, ranges inside `SUM`, `AVERAGE`, `MIN`, `MAX`, `COUNT`, and `ROUND`. Formula errors appear in cells. Press F2 or double-click to move the cursor inside a cell. Copy/paste preserves formula references exactly; it does not shift them like Excel.
 
-Spreadsheet content saves locally and travels with JSON workspace exports. **CSV** exports calculated values; JSON preserves formulas and formats. Older workspaces open with an empty spreadsheet. This version has one sheet, up to 200 rows and 26 columns, with 5,000 populated cells and a 200,000-character storage limit. It does not import Excel files or connect to banks.
+Spreadsheet content saves locally and travels with JSON workspace exports. **CSV** exports calculated values; JSON preserves formulas and formats. Older workspaces open with an empty spreadsheet. This version has one sheet, up to 200 rows and 26 columns, with 5,000 populated cells and a 200,000-character storage limit. It does not import Excel files or connect to real banks.
+
+## Connect a mock bank
+
+**Connect mock bank** in the Spreadsheet header pulls a demo customer's accounts and one month of transactions from Capital One's [Nessie](http://api.nessieisreal.com) sandbox: three accounts, a dated ledger with **Money in** and **Money out** columns, totals, and a by-category block. It is pretend money for one app-managed customer, not a real bank. You can also ask the partner: **"Pull in my bank transactions and tell me where my money goes."** The import replaces the sheet (with a confirmation when it has content) and is undoable.
+
+Set `NESSIE_API_KEY` in `.env.local` to use the live sandbox; the first connect seeds the demo customer with about forty records and takes a few seconds, and later connects reuse it. Nessie stores purchase and deposit amounts as whole dollars and is known to go down during hackathons, so if the key is missing or the API fails, the same data is imported from a bundled snapshot and the sheet says **Offline demo data**. The partner is told which source was used.
 
 ## Verify
 

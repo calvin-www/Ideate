@@ -4,6 +4,8 @@ import { useWorkspace } from "../workspace/store";
 import { adapters } from "../workspace/adapters";
 import { buildBoardPatch } from "../board/adapter";
 import { parseSheet, serializeSheet, patchSheet, evaluateSheet, type CellUpdate } from "../spreadsheet/sheet";
+import { bankSnapshotToSheet } from "../bank/toSheet";
+import type { BankSnapshot } from "../bank/types";
 import {
   applyProposal,
   checkProposal,
@@ -475,7 +477,9 @@ export function createCollaborator(options: Options) {
     const target = (
       call.name === "link_artifacts"
         ? call.args.target
-        : call.name.replace("edit_", "")
+        : call.name === "import_bank_data"
+          ? "spreadsheet"
+          : call.name.replace("edit_", "")
     ) as Tool;
     if (call.name === "link_artifacts" && target !== "notes")
       return {
@@ -553,6 +557,8 @@ export function createCollaborator(options: Options) {
                       text: `\n\n### Sources\n\n${links}\n`,
                     },
                   ]
+                : call.name === "import_bank_data"
+                  ? [{ from: 0, to: data.spreadsheet.text.length, text: String(call.args.sheetText) }]
                 : target === "spreadsheet"
                   ? [{ from: 0, to: data.spreadsheet.text.length, text: serializeSheet(patchSheet(parseSheet(data.spreadsheet.text), call.args.updates as CellUpdate[])) }]
                   : (call.args.replacements as Replacement[]),
@@ -586,6 +592,33 @@ export function createCollaborator(options: Options) {
           "The document, referenced source, or proposal is no longer valid. Read the current artifact and propose a fresh change.",
       };
     }
+  }
+
+  // Fetch the mock bank snapshot, lay it out, and stage it as an ordinary
+  // whole-sheet proposal so review, auto-apply, and undo behave like any edit.
+  async function importBank(job: Job, call: Call): Promise<unknown> {
+    let snapshot: BankSnapshot;
+    try {
+      const response = await request("/api/bank/import", { method: "POST", signal: job.controller.signal });
+      if (!response.ok) throw new Error(`Bank import failed with ${response.status}`);
+      snapshot = (await response.json()) as BankSnapshot;
+    } catch (error) {
+      assertActive(job);
+      return { status: "unavailable", message: `The bank import is unavailable: ${error instanceof Error ? error.message : String(error)}` };
+    }
+    assertActive(job);
+    let laid: ReturnType<typeof bankSnapshotToSheet>;
+    try {
+      laid = bankSnapshotToSheet(snapshot, new Date());
+    } catch (error) {
+      return { status: "unavailable", message: error instanceof Error ? error.message : String(error) };
+    }
+    if (job.voice) job.taught = true;
+    const staged = await stage(job, { ...call, args: { ...call.args, sheetText: serializeSheet(laid.sheet) } }, job.voice ? String(call.args.summary) : undefined);
+    const outcome = staged as { status?: string };
+    return outcome.status === "accepted"
+      ? { ...outcome, source: snapshot.source, ...(snapshot.reason ? { reason: snapshot.reason } : {}), ranges: laid.ranges }
+      : staged;
   }
 
   async function executeCall(job: Job, call: Call): Promise<unknown> {
@@ -716,6 +749,8 @@ export function createCollaborator(options: Options) {
           status: "not_found",
           message: "That saved run does not exist.",
         };
+    } else if (call.name === "import_bank_data") {
+      result = await importBank(job, call);
     } else if (
       call.name.startsWith("edit_") ||
       call.name === "link_artifacts"

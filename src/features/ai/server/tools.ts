@@ -110,6 +110,7 @@ const workspaceToolSchemas = {
     deleteIds: z.array(id).max(50),
     summary,
   }),
+  import_bank_data: z.strictObject({ baseRevision: revision, summary }),
   run_python: z.strictObject({ revision }),
   link_artifacts: z.strictObject({
     sourceIds: z.array(id).min(1).max(30),
@@ -127,6 +128,7 @@ export const toolSchemas = {
       z.strictObject({ name: z.literal("edit_notes"), args: workspaceToolSchemas.edit_notes }),
       z.strictObject({ name: z.literal("edit_spreadsheet"), args: workspaceToolSchemas.edit_spreadsheet }),
       z.strictObject({ name: z.literal("edit_board"), args: workspaceToolSchemas.edit_board }),
+      z.strictObject({ name: z.literal("import_bank_data"), args: workspaceToolSchemas.import_bank_data }),
       z.strictObject({ name: z.literal("show_attention"), args: workspaceToolSchemas.show_attention }),
       z.strictObject({ name: z.literal("clear_attention"), args: workspaceToolSchemas.clear_attention }),
     ]).optional(),
@@ -146,6 +148,7 @@ export const toolNames = [
   "edit_notes",
   "edit_spreadsheet",
   "edit_board",
+  "import_bank_data",
   "run_python",
   "link_artifacts",
 ] as const;
@@ -173,6 +176,8 @@ const descriptions: Record<ToolName, string> = {
     "Propose Markdown replacements at baseRevision using UTF-16 offsets. By default append at text.length using from=to=text.length. Preserve existing notes. Include relevant source IDs and observed run evidence.",
   edit_board:
     "Propose editable diagram additions, updates, or deletions at baseRevision, including pen/freehand drawings. For a pen stroke add {type:'freedraw', points:[{x,y}, ...], strokeColor?, strokeWidth?}. Points are ordered absolute board coordinates (2-512 per stroke, at most 10000 units per axis); no x/y/width/height fields are needed for freedraw. Each stroke is a separate element; repeat the first point to close a loop. Shapes/text use positive width and height. Arrows start at x/y and end at x+width/y+height: signed width/height allow left/up arrows and one may be zero. This does not apply changes. Include empty arrays for unused fields. Never supply IDs for additions. To connect a new node, first create it, wait for acceptance, read its assigned ID, then add a bound arrow; bindings reference existing element IDs only.",
+  import_bank_data:
+    "Propose replacing the whole spreadsheet with the student's mock bank data from the Capital One Nessie sandbox: account balances, a dated ledger with Money in / Money out columns, totals, and a by-category block. Use when the student asks to connect, pull, import, or refresh their bank, accounts, transactions, or spending. Supply the spreadsheet's exact baseRevision. The result reports source (nessie or snapshot) and the row ranges written. Wait for the accepted result before describing the data.",
   run_python:
     "Request execution of the exact current Python revision only when the student's request explicitly asks to run/test/execute. An explanation or code-edit request does not authorize execution. Wait for the actual ExecutionRun result.",
   link_artifacts:
@@ -208,8 +213,9 @@ export function validateToolCall(
     if (step.operation && !validateToolCall(step.operation.name, step.operation.args)) return undefined;
     return step;
   }
-  if ("replacements" in parsed.data) {
-    const ranges = [...parsed.data.replacements].sort(
+  const replacements = (parsed.data as { replacements?: { from: number; to: number }[] }).replacements;
+  if (replacements) {
+    const ranges = [...replacements].sort(
       (a, b) => a.from - b.from || a.to - b.to,
     );
     if (

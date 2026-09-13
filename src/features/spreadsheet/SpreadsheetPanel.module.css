@@ -31,4 +31,5 @@
 .footer summary { cursor: pointer; }
 .footer p { position: absolute; right: 0; bottom: 20px; width: 245px; padding: 15px; background: #f8f9f3; border: 1px solid #dce3d7; box-shadow: 0 4px 14px #26382f15; line-height: 1.7; z-index: 4; }
 .error { margin: 0; padding: 8px 14px; font-size: 12px; color: #8e4534; background: #fff2ed; }
+.status { margin: 0; padding: 8px 14px; font-size: 12px; color: #425b49; background: #eef3e6; }
 @container (max-width: 440px) { .toolbar { padding: 8px; } .title { display: none; } .footer > span { display: none; } }

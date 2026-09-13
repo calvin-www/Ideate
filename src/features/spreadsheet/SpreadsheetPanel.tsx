@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent } from "react";
-import { Download, Redo2, Undo2 } from "lucide-react";
+import { Download, Landmark, Redo2, Undo2 } from "lucide-react";
+import { bankSnapshotToSheet } from "../bank/toSheet";
+import type { BankSnapshot } from "../bank/types";
 import { useWorkspace } from "../workspace/store";
 import { adapters } from "../workspace/adapters";
 import { columnName, evaluateSheet, exportCsv, formatCell, parseSheet, patchSheet, serializeSheet, type Sheet } from "./sheet";
@@ -27,6 +29,7 @@ export default function SpreadsheetPanel({ visible = true }: { visible?: boolean
   const [rows, setRows] = useState(40);
   const [cols, setCols] = useState(8);
   const [error, setError] = useState("");
+  const [bank, setBank] = useState<{ busy: boolean; slow: boolean; status: string }>({ busy: false, slow: false, status: "" });
   const [, refreshHistory] = useState(0);
   const root = useRef<HTMLDivElement>(null);
   const history = useRef<{ undo: string[]; redo: string[]; text: string; workspaceId: string }>({ undo: [], redo: [], text: artifact.text, workspaceId });
@@ -100,10 +103,31 @@ export default function SpreadsheetPanel({ visible = true }: { visible?: boolean
     history.current.text = useWorkspace.getState().data.spreadsheet.text;
     refreshHistory((n) => n + 1);
     setError("");
+    setBank((state) => state.status ? { ...state, status: "" } : state);
   }
   function update(updates: Parameters<typeof patchSheet>[1]) {
     try { save(patchSheet(parseSheet(useWorkspace.getState().data.spreadsheet.text), updates)); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "Could not update these cells."); }
+  }
+  // Pull the mock bank snapshot and replace the sheet through the panel's own
+  // undo history. The route never fails for Nessie reasons; it falls back to
+  // bundled data and says so in the snapshot.
+  async function connectBank() {
+    if (bank.busy) return;
+    if (Object.keys(parseSheet(useWorkspace.getState().data.spreadsheet.text).cells).length && !window.confirm("Replace the spreadsheet with your bank import? You can undo this.")) return;
+    setError("");
+    setBank({ busy: true, slow: false, status: "" });
+    const slow = setTimeout(() => setBank((state) => ({ ...state, slow: true })), 3000);
+    try {
+      const response = await fetch("/api/bank/import", { method: "POST" });
+      if (!response.ok) throw new Error(`Bank import failed with ${response.status}.`);
+      const snapshot = (await response.json()) as BankSnapshot;
+      save(bankSnapshotToSheet(snapshot, new Date()).sheet);
+      setBank({ busy: false, slow: false, status: snapshot.source === "nessie" ? "Imported from Capital One Nessie (live)" : "Imported offline demo data — Nessie unreachable" });
+    } catch (cause) {
+      setBank({ busy: false, slow: false, status: "" });
+      setError(cause instanceof Error ? cause.message : "Bank import failed.");
+    } finally { clearTimeout(slow); }
   }
   function undo(redo = false) {
     const state = useWorkspace.getState();
@@ -162,11 +186,13 @@ export default function SpreadsheetPanel({ visible = true }: { visible?: boolean
         <select aria-label="Cell number format" value={sheet.cells[currentAddress]?.format ?? "general"} onChange={(event) => update(selected.map((id) => ({ address: id, raw: sheet.cells[id]?.raw ?? "", format: event.target.value as "general" | "currency" | "percent" })))}>
           <option value="general">General</option><option value="currency">Currency (USD)</option><option value="percent">Percent</option>
         </select>
+        <button onClick={connectBank} disabled={bank.busy} aria-busy={bank.busy} title="Import mock bank accounts and transactions from the Capital One Nessie sandbox"><Landmark size={15} /> {bank.busy ? (bank.slow ? "Setting up demo bank…" : "Connecting…") : "Connect mock bank"}</button>
         <button onClick={() => { const url = URL.createObjectURL(new Blob([exportCsv(sheet)], { type: "text/csv;charset=utf-8" })); const link = document.createElement("a"); link.href = url; link.download = "spreadsheet.csv"; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }}><Download size={15} /> CSV</button>
       </div>
     </div>
     <div className={styles.formulaBar}><output aria-label="Selected cells">{selected.length > 1 ? `${address(anchor)}:${currentAddress}` : currentAddress}</output><span aria-hidden="true">fx</span><input aria-label="Cell formula" value={sheet.cells[currentAddress]?.raw ?? ""} placeholder="Enter a value or =SUM(A1:A5)" onChange={(event) => update([{ address: currentAddress, raw: event.target.value }])} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); focusCell({ ...active, row: active.row + 1 }); } }} /></div>
     {error && <p className={styles.error} role="alert">{error}</p>}
+    {bank.status && <p className={styles.status} role="status">{bank.status}</p>}
     <div className={styles.scroller}>
       <table className={styles.grid} aria-label="Spreadsheet cells" onPaste={paste} onCopy={copy}>
         <thead><tr><th aria-label="Row numbers" />{Array.from({ length: colCount }, (_, col) => <th key={col} scope="col">{columnName(col)}</th>)}</tr></thead>
