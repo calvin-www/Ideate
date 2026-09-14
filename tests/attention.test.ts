@@ -5,8 +5,10 @@ import { createWorkspace } from "../src/features/workspace/model";
 import { useWorkspace } from "../src/features/workspace/store";
 
 beforeEach(() => {
+  const data = createWorkspace();
+  data.code.text = "def solve(values):\n    return values\n";
   useWorkspace.setState({
-    data: createWorkspace(),
+    data,
     view: "code",
     visibleTools: ["code"],
     selection: null,

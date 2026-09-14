@@ -16,7 +16,6 @@ import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import { useWorkspace } from "../workspace/store";
 import { adapters } from "../workspace/adapters";
 import type { BoardElement } from "../workspace/model";
-import { sampleBoard } from "./adapter";
 import BoardAttention from "./BoardAttention";
 import BoardPresentation from "../voice/BoardPresentation";
 import { usePresentation } from "../voice/presentation";

@@ -174,7 +174,9 @@ test("board updates and deletions replace the provisional scene and preserve can
   await page.goto("/");
   await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
   await goToTool(page, "Whiteboard");
-  await page.getByRole("button", { name: "Load binary search example", exact: true }).click();
+  await page.evaluate(
+    "import('/src/features/board/adapter.ts').then(async (adapter) => { const { useWorkspace } = await import('/src/features/workspace/store.ts'); const elements = await adapter.buildBoardPatch([], { additions: [{ type: 'text', x: 90, y: 60, width: 180, height: 30, text: 'low = 0' }, { type: 'text', x: 336, y: 60, width: 180, height: 30, text: 'high = 7' }] }); useWorkspace.getState().setBoard(elements); })",
+  );
   await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
   const before = await exportedWorkspace(page);
   await page.getByRole("button", { name: "Turn on microphone", exact: true }).click();
@@ -207,7 +209,6 @@ test("a board pen stroke grows during speech and taking over interrupts it", asy
   await page.goto("/");
   await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
   await goToTool(page, "Whiteboard");
-  await expect(page.getByRole("button", { name: "Load binary search example", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Turn on microphone", exact: true }).click();
   const controls = page.getByRole("region", { name: "Voice controls" });
   await expect(controls).toContainText("Listening");

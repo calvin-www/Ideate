@@ -373,9 +373,9 @@ test("whiteboard cues follow zoom and pan without editing the drawing", async ({
     },
   ]);
   await open(page, "Whiteboard");
-  await page
-    .getByRole("button", { name: "Load binary search example" })
-    .click();
+  await page.evaluate(
+    "import('/src/features/board/adapter.ts').then(async (adapter) => { const { useWorkspace } = await import('/src/features/workspace/store.ts'); const elements = await adapter.buildBoardPatch([], { additions: [{ type: 'rectangle', x: 100, y: 100, width: 80, height: 60, text: '12' }, { type: 'rectangle', x: 200, y: 100, width: 80, height: 60, text: '16' }] }); useWorkspace.getState().setBoard(elements); })",
+  );
   const before = await snapshot(page);
   await ask(page);
   await expect(page.locator('[data-attention-target="board"] [data-attention-box]')).toHaveCount(2);

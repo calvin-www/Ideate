@@ -200,13 +200,9 @@ test("IDE debugger steps real values, marks edits stale, continues the captured 
 test("domain clearing is scoped and full clearing stops debugging, flips the table, and stays empty after reload", async ({
   page,
 }) => {
+  await navigate(page, "Computer");
+  await editCode(page, "print('seeded by test')");
   await navigate(page, "Whiteboard");
-  await page
-    .getByRole("button", { name: "Load binary search example" })
-    .click();
-  await expect
-    .poll(async () => (await snapshot(page)).board.elements.length)
-    .toBeGreaterThan(0);
   await page.getByRole("button", { name: "Toggle study partner" }).click();
   await partner(page)
     .getByRole("switch", { name: "Auto-apply changes" })
@@ -226,11 +222,11 @@ test("domain clearing is scoped and full clearing stops debugging, flips the tab
     .click();
   let data = await snapshot(page);
   expect(data.board.elements).toEqual([]);
-  expect(data.code.text).toContain("binary_search");
+  expect(data.code.text).toContain("seeded by test");
   await clear(page, "notes");
   data = await snapshot(page);
   expect(data.notes.text).toBe("");
-  expect(data.code.text).toContain("binary_search");
+  expect(data.code.text).toContain("seeded by test");
   await navigate(page, "Computer");
   await clear(page, "Python");
   await expect(codePanel(page).locator(".cm-content")).toHaveText("");

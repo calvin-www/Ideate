@@ -35,10 +35,10 @@ The Python runtime ships with the npm dependency and runs in a separate-origin i
 
 ## Try the study loop
 
-1. Open the whiteboard and choose **Load binary search example**. **Fit drawing** brings the whole diagram into view.
+1. Draw an idea on the whiteboard, or type a small Python program.
 2. Select part of the diagram and ask the study partner for a hint or explanation.
-3. Ask the study partner to show the idea in Python, then run the code. With auto-apply disabled, review the proposed change and choose **Apply & run**. The prepared Python example also runs without AI.
-4. Change `target = 16` to `target = 17` and compare the actual traces.
+3. Ask the study partner to show the idea in Python, then run the code. With auto-apply disabled, review the proposed change and choose **Apply & run**.
+4. Change an input value and compare the actual traces.
 5. Select output and ask to add the lesson to your notes, then open its saved source links.
 
 AI edits auto-apply by default. Turn off **Auto-apply changes** in chat to review new proposals; the preference is remembered in this browser. Existing pending proposals still wait for review. Both modes preserve revision checks and undo, and running Python still requires an explicit request. Later manual changes invalidate stale proposals. Ordinary undo restores the prior content; conflicting undo shows an explicit restore preview and keeps the replaced version recoverable.
@@ -78,6 +78,6 @@ The Gemini check makes small live API requests and requires the local key. Other
 
 [Documentation](docs/README.md) covers product decisions, architecture, interaction design, and the original hackathon plan. [Implementation status](docs/implementation-status.md) records validation and remaining limits.
 
-Automated coverage includes local persistence, review and auto-apply, editor layouts, Python execution, microphone controls, board navigation during AI drawing, and text highlighting. A [prepared example](docs/examples/README.md) is available for Gemini outages or rate limits; its saved output is explicitly historical.
+Automated coverage includes local persistence, review and auto-apply, editor layouts, Python execution, microphone controls, board navigation during AI drawing, and text highlighting.
 
 This is a fresh implementation; the earlier Ideate repository was used as design reference. Nothing has been deployed.

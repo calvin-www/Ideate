@@ -270,7 +270,7 @@ export default function ChatPanel({ collaborator, onReference }: Props) {
             </p>
             <div className="starter-questions">
               {[
-                "Help me understand binary search",
+                "Help me plan what to build",
                 "Give me a hint about my diagram",
                 "Explain the last Python result",
               ].map((text) => (

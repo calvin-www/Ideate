@@ -44,7 +44,7 @@ beforeAll(async () => {
   page = await browser.newPage();
   await page.goto(server.resolvedUrls!.local[0]);
   await page.evaluate(
-    "import('/src/features/board/adapter.ts').then(module => { window.buildBoardPatch = module.buildBoardPatch; window.normalizeBoardImport = module.normalizeBoardImport; window.sampleBoard = module.sampleBoard; })",
+    "import('/src/features/board/adapter.ts').then(module => { window.buildBoardPatch = module.buildBoardPatch; window.normalizeBoardImport = module.normalizeBoardImport; })",
   );
   await patch([], {});
 }, 60_000);
@@ -547,12 +547,24 @@ describe("real Excalidraw board adapter", () => {
   it("normalizes imported array diagrams without changing IDs or their source snapshot", async () => {
     const result = await page.evaluate(async () => {
       const api = window as unknown as {
+        buildBoardPatch: (
+          elements: BoardElement[],
+          patch: { additions: Record<string, unknown>[] },
+        ) => Promise<BoardElement[]>;
         normalizeBoardImport: (
           elements: BoardElement[],
         ) => Promise<BoardElement[]>;
-        sampleBoard: () => Promise<BoardElement[]>;
       };
-      const elements = await api.sampleBoard();
+      const elements = await api.buildBoardPatch([], {
+        additions: [2, 5, 8, 12, 16, 23, 38, 56].map((n, i) => ({
+          type: "rectangle",
+          x: 90 + i * 82,
+          y: 150,
+          width: 70,
+          height: 50,
+          text: String(n),
+        })),
+      });
       const before = JSON.stringify(elements);
       const normalized = await api.normalizeBoardImport(elements);
       return {

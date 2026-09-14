@@ -83,9 +83,11 @@ describe("workspace edit boundaries", () => {
     ).toThrow(/source/i);
   });
   it("rejects overlapping replacement ranges", () => {
+    const data = createWorkspace();
+    data.code.text = "some code";
     expect(() =>
       applyProposal(
-        createWorkspace(),
+        data,
         {
           ...proposal(),
           replacements: [
@@ -172,5 +174,13 @@ describe("workspace edit boundaries", () => {
     expect(undoChange(restored, restored.changes.at(-1)!.id).code.text).toBe(
       "later manual edit",
     );
+  });
+  it("starts empty with no seeded example", () => {
+    const data = createWorkspace();
+    expect(data.title).toBe("My workspace");
+    expect(data.code.text).toBe("");
+    expect(data.notes.text).toBe("");
+    expect(data.board.elements).toEqual([]);
+    expect(data.spreadsheet.text).toBe("");
   });
 });

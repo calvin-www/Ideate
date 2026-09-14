@@ -4,7 +4,7 @@ import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { python } from "@codemirror/lang-python";
 import { markdown } from "@codemirror/lang-markdown";
 import { foldedRanges, unfoldEffect } from "@codemirror/language";
-import { Decoration, EditorView } from "@codemirror/view";
+import { Decoration, EditorView, placeholder } from "@codemirror/view";
 import { EditorState, StateEffect, StateField } from "@codemirror/state";
 import { useWorkspace } from "./store";
 import { adapters } from "./adapters";
@@ -80,6 +80,7 @@ const pythonExtensions = [
   selectionAppearance,
   documentLimit,
   executionLineField,
+  placeholder("# Write Python here, then press Ctrl+Enter to run"),
 ];
 const noteExtensions = [
   markdown(),
@@ -87,6 +88,7 @@ const noteExtensions = [
   selectionAppearance,
   documentLimit,
   EditorView.lineWrapping,
+  placeholder("Start writing…"),
 ];
 export default function TextEditor({
   target,

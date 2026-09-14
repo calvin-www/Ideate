@@ -80,17 +80,19 @@ async function exportedWorkspace(page: Page): Promise<Workspace> {
   return JSON.parse(await readFile(path!, "utf8")) as Workspace;
 }
 
-test("binary search executes its real found and missing-target paths", async ({
+test("a typed program executes and reruns after an edit", async ({
   page,
 }) => {
   await openWorkspace(page);
   await navigate(page, "Computer");
+  await editDocument(
+    page,
+    "code",
+    'values = [2, 5, 8, 12, 16]\ntarget = 16\nprint(f"Found at index {values.index(target)}" if target in values else "Not found")\n',
+  );
   await runPython(page);
   const output = pythonPanel(page).getByLabel("Python output", { exact: true });
   await expect(output).toContainText("Found at index 4", { timeout: 30_000 });
-  await expect(output).toContainText("low=0  high=7  mid=3  value=12");
-  await expect(output).toContainText("low=4  high=7  mid=5  value=23");
-  await expect(output).toContainText("low=4  high=4  mid=4  value=16");
 
   const original = await exportedWorkspace(page);
   expect(original.runs.at(-1)?.status).toBe("success");
@@ -226,45 +228,6 @@ test("code and Markdown notes retain edits across navigation and reload", async 
   await expect(
     journalPanel(page).getByRole("heading", {
       name: "A useful invariant",
-      exact: true,
-    }),
-  ).toBeVisible();
-});
-
-test("the binary-search board example is included in exports and survives reload", async ({
-  page,
-}) => {
-  await openWorkspace(page);
-  await navigate(page, "Whiteboard");
-  await page
-    .getByRole("button", { name: "Load binary search example", exact: true })
-    .click();
-  let saved: Workspace | undefined;
-  await expect
-    .poll(
-      async () => {
-        saved = await exportedWorkspace(page);
-        return saved.board.elements.filter((element) => !element.isDeleted)
-          .length;
-      },
-      {
-        message: "The exported workspace contains the loaded board",
-        timeout: 20_000,
-      },
-    )
-    .toBeGreaterThan(8);
-  const elements = saved!.board.elements;
-  expect(elements.some((element) => element.type === "text")).toBe(true);
-  await navigate(page, "Desk");
-  await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
-  await page.reload();
-  await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
-  const restored = await exportedWorkspace(page);
-  expect(restored.board.elements).toEqual(elements);
-  await navigate(page, "Whiteboard");
-  await expect(
-    page.getByRole("button", {
-      name: "Load binary search example",
       exact: true,
     }),
   ).toBeVisible();
