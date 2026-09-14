@@ -88,29 +88,53 @@
   align-items: center;
   gap: 10px;
 }
-.layoutButton,
+.controls[data-dropping] {
+  outline: 2px dashed #7e9a69;
+  outline-offset: 3px;
+  border-radius: 7px;
+}
+.chip,
+.overflow,
 .restore {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border: 1px solid #d9e1d1;
+  border: 1px solid transparent;
   border-radius: 5px;
-  padding: 7px 9px;
-  background: #fbfcf7;
-  color: #526b47;
+  padding: 6px 8px;
+  background: transparent;
+  color: #7c8a71;
   font-size: 11px;
   white-space: nowrap;
+  cursor: pointer;
 }
-.layoutButton:hover,
+.chip[aria-pressed="true"] {
+  color: #526b47;
+  background: #fbfcf7;
+  border-color: #d9e1d1;
+}
+.chip[data-focused] {
+  box-shadow: 0 0 0 2px #a5c591;
+}
+.chip:hover,
+.overflow:hover,
 .restore:hover {
   background: #e9efdf;
+}
+.chip[draggable="true"] {
+  cursor: grab;
+}
+.restore {
+  border-color: #d9e1d1;
+  background: #fbfcf7;
+  color: #526b47;
 }
 .menu {
   position: fixed;
   left: auto;
   bottom: auto;
   margin: 0;
-  width: 315px;
+  width: 260px;
   max-width: calc(100vw - 24px);
   max-height: calc(100dvh - 100px);
   overflow-y: auto;
@@ -133,41 +157,6 @@
   font-size: 11px;
   line-height: 1.6;
   margin: 7px 0 15px;
-}
-.toolRow {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 8px 0;
-}
-.toolRow > span {
-  flex: 1;
-  font-size: 12px;
-}
-.toolRow button,
-.keyboardSizing button {
-  display: grid;
-  place-items: center;
-  width: 31px;
-  height: 30px;
-  border: 1px solid #dce4d3;
-  border-radius: 5px;
-  background: #f4f7ec;
-  color: #5a734d;
-}
-.toolRow button { width: 40px; }
-.columnLabels {
-  display: flex;
-  gap: 5px;
-  align-items: center;
-  font-size: 10px;
-  color: #627558;
-}
-.columnLabels span:first-child { flex: 1; }
-.columnLabels span:not(:first-child) { width: 40px; text-align: center; }
-.toolRow button:hover,
-.keyboardSizing button:hover {
-  background: #e2ecd6;
 }
 .menu button:disabled {
   opacity: 0.4;
@@ -194,24 +183,6 @@
 .menuActions button:hover {
   background: #edf2e5;
 }
-.keyboardSizing {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-top: 1px solid #e0e7d8;
-  padding-top: 12px;
-  margin-top: 8px;
-  font-size: 10px;
-  color: #7c8a71;
-}
-.keyboardSizing > div {
-  display: flex;
-  gap: 4px;
-}
-.keyboardSizing button {
-  width: 27px;
-  height: 27px;
-}
 .controls button:focus-visible,
 .groupActions button:focus-visible,
 .menu button:focus-visible {
@@ -219,7 +190,7 @@
   outline-offset: 2px;
 }
 @media (max-width: 800px) {
-  .layoutButton span {
+  .chip span {
     display: none;
   }
   .restore {
