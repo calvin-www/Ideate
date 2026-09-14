@@ -894,8 +894,6 @@ svg {
   .header-actions > .icon-button {
     display: none;
   }
-  .editor-layout-controls button[aria-label="Addons"] { width: 31px; padding: 7px; }
-  .editor-layout-controls button[aria-label="Addons"] span { display: none; }
   .storage-error { top: 71px; }
   .chat-panel {
     position: absolute;

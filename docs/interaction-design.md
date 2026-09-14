@@ -34,7 +34,7 @@ One soft key light, ambient fill, and inexpensive contact shadows are sufficient
 
 The scene should stop rendering while an opaque tool interface covers it. Return transitions must not delay the availability of navigation controls.
 
-**Addons** offers beside, below, tab, and float placements for every other tool in one row. **Show only [tool]** keeps the focused tool; **Restore previous arrangement** recovers the last arrangement explicitly. Selecting desk objects never automatically restores a saved layout. Content, editor history, cursor, scroll, journal mode, and board camera remain in the mounted editors. Output returns to its embedded location when Computer opens alone. Following an artifact reference reveals its tool without discarding an active arrangement.
+The header **tool dock** lists every tool as a chip that shows whether it is hidden, visible, or focused. Clicking a hidden chip adds the tool as a tab in the focused group; clicking a visible chip focuses it. Dragging a chip onto an editor edge splits beside or below it, onto the center adds a tab, and onto the dock floats it. **Show only [tool]**, **Restore previous arrangement**, and **Reset arrangement** live in the Arrangement overflow. Alt+Shift+1/2/3/4 adds a tool as a tab. Selecting desk objects never automatically restores a saved layout. Content, editor history, cursor, scroll, journal mode, and board camera remain in the mounted editors. Output returns to its embedded location when Computer opens alone. Following an artifact reference reveals its tool without discarding an active arrangement.
 
 ## Whiteboard
 
