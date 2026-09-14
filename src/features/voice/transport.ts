@@ -1,4 +1,5 @@
 "use client";
+import { keyHeaders, useProviderKeys } from "../settings/providerKeys";
 
 export type MicrophoneCallbacks = {
   onSpeechStart(): void;
@@ -80,6 +81,7 @@ function publicError(error: unknown, fallback: string): string {
 async function fetchScribeToken(signal: AbortSignal): Promise<string> {
   const response = await fetch("/api/voice/session", {
     method: "POST",
+    headers: keyHeaders(useProviderKeys.getState().keys),
     signal,
   });
   const payload = (await response.json().catch(() => ({}))) as {
@@ -424,7 +426,10 @@ export async function speak(
   try {
     const response = await fetch("/api/voice/speech", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        ...keyHeaders(useProviderKeys.getState().keys),
+      },
       body: JSON.stringify({ text }),
       signal: requestController.signal,
     });

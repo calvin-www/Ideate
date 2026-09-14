@@ -23,6 +23,7 @@ import {
 // provider client, or other server runtime dependency.
 import { validateToolCall } from "./server/tools";
 import { checkAttention, parseAttention } from "./attention";
+import { keyHeaders, useProviderKeys } from "../settings/providerKeys";
 
 export type PendingChange = {
   proposal: Proposal;
@@ -746,7 +747,10 @@ export function createCollaborator(options: Options) {
     useWorkspace.setState({ activity: "Thinking through your workspace…" });
     const response = await request("/api/ai", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...keyHeaders(useProviderKeys.getState().keys),
+      },
       signal: job.controller.signal,
       body: JSON.stringify({
         messages: job.messages,
@@ -761,7 +765,7 @@ export function createCollaborator(options: Options) {
         response.status === 429
           ? "Gemini is at its request limit. Wait a moment and try again."
           : response.status === 503
-            ? "Gemini is unavailable. Check the server configuration and try again."
+            ? "Gemini is unavailable. Check your API key in Settings and try again."
             : "Gemini could not finish this request. Your work is preserved; try again.";
       const failure: unknown = await response.json().catch(() => undefined);
       throw new CollaborationError(endpointError(failure, fallback));
