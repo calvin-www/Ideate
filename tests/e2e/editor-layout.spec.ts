@@ -1,5 +1,5 @@
 import { expect, test as base, type Page } from "@playwright/test";
-import { arrange, goToTool } from "./desk-navigation";
+import { addTool, arrange, dragTool, floatTool, goToTool } from "./desk-navigation";
 
 const test = base.extend<{ pageErrors: string[] }>({
   pageErrors: [
@@ -40,7 +40,7 @@ test("splits real editors and preserves undo when returning to the default", asy
   await editor.press("End");
   await page.keyboard.type(" # retained");
   await expect(editor).toContainText("# retained");
-  await arrange(page, "Split with Journal");
+  await dragTool(page, "Journal", "right");
   await expect(python(page)).toBeVisible();
   await expect(journal(page)).toBeVisible();
   await page.screenshot({ path: test.info().outputPath("split.png") });
@@ -65,7 +65,7 @@ test("floats Python above the board and restores its bounds after maximizing", a
   page,
 }) => {
   await open(page, "Whiteboard");
-  await arrange(page, "Float Python");
+  await floatTool(page, "Python");
   await expect(python(page)).toBeVisible();
   await expect(
     page.getByRole("region", { name: "Whiteboard tool", exact: true }),
@@ -143,7 +143,7 @@ test("persists resized splits and falls back to the single editor on narrow scre
   page,
 }) => {
   await open(page);
-  await arrange(page, "Split with Journal");
+  await dragTool(page, "Journal", "right");
   const before = await python(page).boundingBox();
   const divider = page
     .locator(
@@ -202,7 +202,7 @@ test("persists resized splits and falls back to the single editor on narrow scre
 
 test("returning to Computer opens alone and explicit restore retains its resized split", async ({ page }) => {
   await open(page);
-  await arrange(page, "Split with Whiteboard");
+  await dragTool(page, "Whiteboard", "right");
   const divider = await page
     .locator(
       ".dv-split-view-container.dv-horizontal > .dv-sash-container > .dv-sash",
@@ -253,7 +253,7 @@ test("tools share one explicitly restored split, floating, or tabbed arrangement
   page,
 }) => {
   await open(page);
-  await arrange(page, "Split with Journal");
+  await dragTool(page, "Journal", "right");
   const computerWidth = (await python(page).boundingBox())!.width;
   await goToTool(page, "Whiteboard");
   await expect(page.locator(".dv-tab")).toHaveCount(0);
@@ -267,7 +267,7 @@ test("tools share one explicitly restored split, floating, or tabbed arrangement
     .toBeLessThan(3);
 
   await goToTool(page, "Whiteboard");
-  await arrange(page, "Float Python");
+  await floatTool(page, "Python");
   const floating = await python(page).boundingBox();
   await goToTool(page, "Journal");
   await expect(page.locator(".dv-tab")).toHaveCount(0);
@@ -282,7 +282,7 @@ test("tools share one explicitly restored split, floating, or tabbed arrangement
     .toBeLessThan(3);
 
   await goToTool(page, "Journal");
-  await arrange(page, "Tab with Whiteboard");
+  await addTool(page, "Whiteboard");
   await goToTool(page, "Computer");
   await expect(page.locator(".dv-tab")).toHaveCount(0);
   await expect(journal(page)).toBeHidden();
@@ -314,7 +314,7 @@ test("docks a floating editor and keeps single mode after hiding the last panel"
   page,
 }) => {
   await open(page, "Whiteboard");
-  await arrange(page, "Float Python");
+  await floatTool(page, "Python");
   await page.getByRole("button", { name: "Dock Python", exact: true }).click();
   await expect(python(page)).toBeVisible();
   await expect(page.locator(".dv-floating-titlebar")).toHaveCount(0);
@@ -345,7 +345,7 @@ test("drags editors into a tab group without recreating the editor", async ({
 }) => {
   await open(page);
   const original = await python(page).getByRole("textbox").elementHandle();
-  await arrange(page, "Split with Journal");
+  await dragTool(page, "Journal", "right");
   const tab = page.getByRole("tab", { name: "Python", exact: true });
   const source = await page
     .getByRole("tab", { name: "Journal", exact: true })
@@ -404,7 +404,7 @@ test("Python keeps running while its editor is split, floated, and maximized", a
   await goToTool(page, "Journal");
   await goToTool(page, "Computer");
   await expect(output).toContainText("tick");
-  await arrange(page, "Split with Journal");
+  await dragTool(page, "Journal", "right");
   await page.getByRole("button", { name: "Float Python", exact: true }).click();
   await page
     .getByRole("button", { name: "Maximize Python", exact: true })

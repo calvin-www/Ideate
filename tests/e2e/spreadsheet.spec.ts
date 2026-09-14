@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { readFile } from "node:fs/promises";
-import { arrange, goToTool } from "./desk-navigation";
+import { arrange, dragTool, goToTool } from "./desk-navigation";
 
 test.use({ reducedMotion: "reduce" });
 
@@ -53,7 +53,7 @@ test("spreadsheet keyboard navigation, split layout and narrow screen", async ({
   await page.keyboard.press("Alt+4");
   const panel = page.getByRole("region", { name: "Spreadsheet workspace", exact: true });
   await expect(panel).toBeVisible();
-  await arrange(page, "Split with Journal");
+  await dragTool(page, "Journal", "right");
   await expect(panel).toBeVisible();
   await expect(page.getByRole("region", { name: "Study journal", exact: true })).toBeVisible();
   await page.screenshot({ path: test.info().outputPath("spreadsheet-split.png") });

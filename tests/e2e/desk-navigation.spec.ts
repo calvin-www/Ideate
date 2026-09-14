@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { goToTool, arrange } from "./desk-navigation";
+import { arrange, dragTool, goToTool } from "./desk-navigation";
 
 test.use({ reducedMotion: "reduce" });
 const python = (page: import("@playwright/test").Page) => page.getByRole("region", { name: "Python workspace", exact: true });
@@ -14,8 +14,7 @@ test("desk entry opens only the requested tool after its original pane was hidde
   await page.keyboard.type(" # undo me");
   const original = await editor.elementHandle();
   // Existing basic split command is used so the failure isolates entry behavior.
-  await page.getByRole("button", { name: "Addons", exact: true }).click();
-  await page.getByRole("button", { name: "Split with Journal", exact: true }).click();
+  await dragTool(page, "Journal", "right");
   await page.getByRole("button", { name: "Hide Python", exact: true }).click();
   await expect(python(page)).toBeHidden();
   await goToTool(page, "Whiteboard");
@@ -34,7 +33,7 @@ test("desk entry opens only the requested tool after its original pane was hidde
 test("desk launches and shortcuts preserve an explicitly recoverable arrangement", async ({ page }) => {
   await page.goto("/");
   await goToTool(page, "Computer");
-  await arrange(page, "Split with Journal");
+  await dragTool(page, "Journal", "right");
   await goToTool(page, "Computer");
   await expect(journal(page)).toBeHidden();
   await arrange(page, "Restore previous arrangement");
@@ -49,7 +48,7 @@ test("desk launches and shortcuts preserve an explicitly recoverable arrangement
   await arrange(page, "Restore previous arrangement");
   await expect(journal(page)).toBeVisible();
   await expect(python(page)).toBeVisible();
-  await page.getByRole("button", { name: "Addons", exact: true }).click();
+  await page.getByRole("button", { name: "Arrangement", exact: true }).click();
   await page.screenshot({ path: test.info().outputPath("layout-menu.png") });
   await page.keyboard.press("Escape");
 });
@@ -70,7 +69,7 @@ test("3D desk objects reopen alone and receive keyboard focus on return", async 
   const computer = page.getByRole("button", { name: "Open Computer", exact: true });
   await computer.click();
   await expect(python(page)).toBeVisible();
-  await arrange(page, "Split with Journal");
+  await dragTool(page, "Journal", "right");
   await page.getByRole("link", { name: "Ideate, back to desk" }).click();
   const journalObject = page.getByRole("button", { name: "Open Journal", exact: true });
   await expect(journalObject).toBeFocused();
@@ -85,7 +84,7 @@ test("journal preview mode survives a layout reset and desk navigation", async (
   await goToTool(page, "Journal");
   await journal(page).getByRole("textbox").fill("# Keep this view\n\nA note worth keeping.");
   await journal(page).getByRole("tab", { name: "Preview", exact: true }).click();
-  await arrange(page, "Split with Python");
+  await dragTool(page, "Python", "right");
   await goToTool(page, "Computer");
   await goToTool(page, "Journal");
   await expect(journal(page).getByRole("tab", { name: "Preview", exact: true })).toHaveAttribute("aria-selected", "true");
