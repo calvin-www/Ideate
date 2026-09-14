@@ -1,5 +1,7 @@
 import type { NextConfig } from "next";
-import { RUNNER_HEADERS } from "./scripts/build-runner.mjs";
+// Imported from the `.cjs` module, not `build-runner.mjs`: Next loads this
+// config through `require()`, which cannot pull in an ES module on Node < 22.12.
+import { RUNNER_HEADERS } from "./scripts/runner-headers.cjs";
 
 const config: NextConfig = {
   reactStrictMode: true,
