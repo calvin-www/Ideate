@@ -249,4 +249,26 @@ describe("AI streaming endpoint", () => {
       summary: "Append",
     });
   });
+
+  it("passes the visitor's Gemini key to the provider and never echoes it", async () => {
+    const seen: (string | undefined)[] = [];
+    const keyed = new Request(request(), { headers: { ...Object.fromEntries(request().headers), "X-Gemini-Key": "visitor-key" } });
+    const response = await handleAiRequest(keyed, {
+      generate: async (_contents, _signal, _recovery, apiKey) => {
+        seen.push(apiKey);
+        return (async function* () {
+          yield chunk({ candidates: [{ content: { role: "model", parts: [{ text: "hi" }] }, finishReason: "STOP" }] });
+        })();
+      },
+    });
+    const text = await response.text();
+    expect(seen).toEqual(["visitor-key"]);
+    expect(text).not.toContain("visitor-key");
+  });
+
+  it("refuses without a key before contacting Gemini", async () => {
+    const response = await handleAiRequest(request());
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({ type: "error", message: "Add your Gemini API key in Settings to chat." });
+  });
 });

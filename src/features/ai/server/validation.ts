@@ -203,6 +203,20 @@ export function parseAiRequest(value: unknown): AiRequest {
   return body;
 }
 
+export const PROVIDER_KEY_PATTERN = /^[\x21-\x7e]{1,256}$/;
+
+/** Visitor-supplied provider credentials. Absent is allowed; malformed is not. */
+export function readProviderKey(
+  request: Request,
+  header: string,
+): string | undefined {
+  const value = request.headers.get(header);
+  if (value === null || value === "") return undefined;
+  if (!PROVIDER_KEY_PATTERN.test(value))
+    throw new AiRequestError(400, `The ${header} header is not a valid API key.`);
+  return value;
+}
+
 export function validateOrigin(request: Request): void {
   const origin = request.headers.get("origin");
   const fetchSite = request.headers.get("sec-fetch-site");

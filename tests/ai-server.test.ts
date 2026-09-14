@@ -5,6 +5,7 @@ import {
   mapAiError,
   parseAiRequest,
   readAiRequest,
+  readProviderKey,
   validateOrigin,
 } from "../src/features/ai/server/validation";
 import { buildContents } from "../src/features/ai/server/provider";
@@ -112,6 +113,24 @@ describe("AI request boundary", () => {
       expect(mapped.message).not.toContain("secret-key");
     },
   );
+
+  it("reads a well-formed provider key header and rejects malformed ones", () => {
+    const withKey = new Request("http://localhost:3000/api/ai", {
+      headers: { "X-Gemini-Key": "AIza-example_123" },
+    });
+    expect(readProviderKey(withKey, "X-Gemini-Key")).toBe("AIza-example_123");
+    expect(
+      readProviderKey(new Request("http://localhost:3000/api/ai"), "X-Gemini-Key"),
+    ).toBeUndefined();
+    expect(() =>
+      readProviderKey(
+        new Request("http://localhost:3000/api/ai", {
+          headers: { "X-Gemini-Key": "x".repeat(257) },
+        }),
+        "X-Gemini-Key",
+      ),
+    ).toThrow(AiRequestError);
+  });
 });
 
 describe("Gemini continuation", () => {
