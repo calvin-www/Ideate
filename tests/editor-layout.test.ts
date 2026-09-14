@@ -8,6 +8,7 @@ import {
   PREVIOUS_ARRANGEMENT_KEY,
   readPreviousArrangement,
   savePreviousArrangement,
+  clearPreviousArrangement,
 } from "../src/features/workspace/layoutPersistence";
 import { useWorkspace } from "../src/features/workspace/store";
 
@@ -38,6 +39,21 @@ const saved = () => ({
 });
 
 describe("editor layout preferences", () => {
+  it("clears the previous arrangement on reset", () => {
+    const values = new Map([[PREVIOUS_ARRANGEMENT_KEY, JSON.stringify(saved())]]);
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+      removeItem: (key: string) => values.delete(key),
+    });
+    try {
+      expect(readPreviousArrangement()).not.toBeNull();
+      expect(clearPreviousArrangement()).toBe(true);
+      expect(readPreviousArrangement()).toBeNull();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
   it("migrates an old arrangement and restores the latest global arrangement thereafter", () => {
     const values = new Map([[PAGE_LAYOUT_STORAGE_KEY, JSON.stringify({ version: 1, pages: { code: saved() } })]]);
     vi.stubGlobal("localStorage", {

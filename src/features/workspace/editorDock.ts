@@ -209,11 +209,4 @@ export class EditorDock {
       if (tool === "output") this.focus("code");
     });
   }
-  resize(tool: EditorPanel, axis: "width" | "height", delta: number) {
-    const panel = this.api.getPanel(tool);
-    if (panel)
-      panel.api.group.api.setSize({
-        [axis]: panel.api.group.api[axis] + delta,
-      });
-  }
 }

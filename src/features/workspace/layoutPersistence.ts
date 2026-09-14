@@ -50,6 +50,17 @@ export function savePreviousArrangement(preference: LayoutPreference): boolean {
   }
 }
 
+export function clearPreviousArrangement(): boolean {
+  try {
+    localStorage.removeItem(PREVIOUS_ARRANGEMENT_KEY);
+    localStorage.removeItem(PAGE_LAYOUT_STORAGE_KEY);
+    localStorage.removeItem(LAYOUT_STORAGE_KEY);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function parsePageLayouts(raw: string | null): PageLayouts {
   if (!raw || raw.length > 100000) return {};
   try {

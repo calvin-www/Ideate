@@ -11,17 +11,18 @@ import {
 
 function fakeTransfer() {
   const data = new Map<string, string>();
-  return {
+  const transfer = {
     types: [] as string[],
     effectAllowed: "uninitialized",
     setData(type: string, value: string) {
       data.set(type, value);
-      this.types = [...data.keys()];
+      transfer.types = [...data.keys()];
     },
     getData(type: string) {
       return data.get(type) ?? "";
     },
-  } as unknown as DataTransfer;
+  };
+  return transfer as unknown as DataTransfer;
 }
 
 describe("tool drag payload", () => {
