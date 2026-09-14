@@ -4,6 +4,7 @@ import {
   hasVoiceKeys,
   keyHeaders,
   parseProviderKeys,
+  readProviderKeys,
   useProviderKeys,
 } from "../src/features/settings/providerKeys";
 
@@ -61,5 +62,53 @@ describe("provider keys", () => {
     expect(hasVoiceKeys(empty)).toBe(false);
     expect(hasVoiceKeys({ ...empty, elevenLabsKey: "e" })).toBe(false);
     expect(hasVoiceKeys({ ...empty, elevenLabsKey: "e", elevenLabsVoiceId: "v" })).toBe(true);
+  });
+
+  it("is safe on SSR when localStorage is unavailable", () => {
+    // Simulates a server render, where `typeof localStorage === "undefined"`.
+    // Stubbing the value to `undefined` (rather than merely unstubbing) keeps
+    // this deterministic: recent Node versions ship a native `localStorage`
+    // global, so simply removing our stub would fall through to that real
+    // object instead of exercising the SSR guard.
+    vi.stubGlobal("localStorage", undefined);
+    expect(typeof localStorage).toBe("undefined");
+    expect(() => readProviderKeys()).not.toThrow();
+    expect(readProviderKeys()).toEqual(empty);
+
+    expect(() => useProviderKeys.getState().hydrate()).not.toThrow();
+    expect(useProviderKeys.getState().keys).toEqual(empty);
+    expect(useProviderKeys.getState().hydrated).toBe(true);
+  });
+
+  it("sets a storage warning when persistence fails and clears it on the next success", () => {
+    vi.stubGlobal("localStorage", {
+      getItem: () => null,
+      setItem: () => {
+        throw new Error("QuotaExceededError");
+      },
+      removeItem: () => {},
+      clear: () => {},
+    });
+
+    useProviderKeys.getState().save({ gemini: "g", elevenLabsKey: "", elevenLabsVoiceId: "" });
+    expect(useProviderKeys.getState().storageWarning).toBe(
+      "Keys will be forgotten when this tab closes. Your browser could not save them.",
+    );
+    // The in-memory keys still update even though persistence failed.
+    expect(useProviderKeys.getState().keys.gemini).toBe("g");
+
+    const values = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value),
+      removeItem: (key: string) => values.delete(key),
+      clear: () => values.clear(),
+    });
+    useProviderKeys.getState().save({ gemini: "g2", elevenLabsKey: "", elevenLabsVoiceId: "" });
+    expect(useProviderKeys.getState().storageWarning).toBe("");
+
+    useProviderKeys.setState({ storageWarning: "stale warning" });
+    useProviderKeys.getState().clear();
+    expect(useProviderKeys.getState().storageWarning).toBe("");
   });
 });
