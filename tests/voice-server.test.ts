@@ -32,9 +32,13 @@ function post(path: string, body?: unknown, signal?: AbortSignal) {
 
 function deps(
   fetchImpl: typeof fetch,
-  config: VoiceServerDependencies["config"] = configured,
+  ...configArg: [VoiceServerDependencies["config"]] | []
 ): VoiceServerDependencies {
-  return { fetch: fetchImpl, config, timeoutMs: 1_000 };
+  // A plain default parameter can't tell "omitted" from "explicitly undefined"
+  // (both trigger the default in JS), so an explicit `deps(fn, undefined)` call
+  // needs a rest tuple to actually suppress the default `configured` fallback.
+  const config = configArg.length > 0 ? configArg[0] : configured;
+  return { fetch: fetchImpl, ...(config ? { config } : {}), timeoutMs: 1_000 };
 }
 
 describe("voice server boundary", () => {
@@ -43,21 +47,46 @@ describe("voice server boundary", () => {
 
     const session = await handleVoiceSession(
       post("/api/voice/session"),
-      deps(upstream, { apiKey: "", voiceId: "", ttsModel: "" }),
+      deps(upstream, undefined),
     );
     const speech = await handleVoiceSpeech(
       post("/api/voice/speech", { text: "Hello" }),
-      deps(upstream, { apiKey: "", voiceId: "", ttsModel: "" }),
+      deps(upstream, undefined),
     );
 
     expect(session.status).toBe(503);
     expect(speech.status).toBe(503);
     expect(await session.json()).toEqual({
-      error: "Add ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID to .env.local, then restart the server.",
+      error: "Add your ElevenLabs API key and voice ID in Settings to use voice.",
     });
     expect(await speech.json()).toEqual({
-      error: "Add ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID to .env.local, then restart the server.",
+      error: "Add your ElevenLabs API key and voice ID in Settings to use voice.",
     });
+    expect(upstream).not.toHaveBeenCalled();
+  });
+
+  it("uses the visitor's ElevenLabs headers for the token request", async () => {
+    const upstream = vi.fn<typeof fetch>(async (_url, init) => {
+      const headers = new Headers(init?.headers);
+      return Response.json({ token: `for:${headers.get("xi-api-key")}` });
+    });
+    const request = new Request(`${origin}/api/voice/session`, {
+      method: "POST",
+      headers: { origin, "X-ElevenLabs-Key": "visitor-el", "X-ElevenLabs-Voice": "voice-1" },
+    });
+    const response = await handleVoiceSession(request, { fetch: upstream, timeoutMs: 1_000 });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ token: "for:visitor-el" });
+  });
+
+  it("rejects malformed credential headers without calling ElevenLabs", async () => {
+    const upstream = vi.fn<typeof fetch>();
+    const request = new Request(`${origin}/api/voice/session`, {
+      method: "POST",
+      headers: { origin, "X-ElevenLabs-Key": "has space", "X-ElevenLabs-Voice": "voice-1" },
+    });
+    const response = await handleVoiceSession(request, { fetch: upstream, timeoutMs: 1_000 });
+    expect(response.status).toBe(503);
     expect(upstream).not.toHaveBeenCalled();
   });
 
@@ -71,7 +100,7 @@ describe("voice server boundary", () => {
 
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({
-      error: "Add ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID to .env.local, then restart the server.",
+      error: "Add your ElevenLabs API key and voice ID in Settings to use voice.",
     });
     expect(upstream).not.toHaveBeenCalled();
   });

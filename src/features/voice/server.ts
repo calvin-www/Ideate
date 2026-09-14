@@ -60,12 +60,20 @@ function isAllowedOrigin(request: Request): boolean {
   }
 }
 
-function environmentConfig(): VoiceServerConfig {
+const CREDENTIAL_PATTERN = /^[\x21-\x7e]{1,256}$/;
+const SETUP_MESSAGE =
+  "Add your ElevenLabs API key and voice ID in Settings to use voice.";
+
+/** Visitor credentials arrive per request; the server keeps none. */
+export function requestConfig(request: Request): VoiceServerConfig | null {
+  const apiKey = request.headers.get("x-elevenlabs-key") ?? "";
+  const voiceId = request.headers.get("x-elevenlabs-voice") ?? "";
+  if (!CREDENTIAL_PATTERN.test(apiKey) || !CREDENTIAL_PATTERN.test(voiceId))
+    return null;
   return {
-    apiKey: process.env.ELEVENLABS_API_KEY?.trim() ?? "",
-    voiceId: process.env.ELEVENLABS_VOICE_ID?.trim() ?? "",
-    ttsModel:
-      process.env.ELEVENLABS_TTS_MODEL?.trim() || "eleven_flash_v2_5",
+    apiKey,
+    voiceId,
+    ttsModel: process.env.ELEVENLABS_TTS_MODEL?.trim() || "eleven_flash_v2_5",
   };
 }
 
@@ -176,9 +184,9 @@ export async function handleVoiceSession(
   if (!isAllowedOrigin(request)) {
     return jsonError(403, "Request origin is not allowed.");
   }
-  const config = dependencies.config ?? environmentConfig();
-  if (!config.apiKey || !config.voiceId) {
-    return jsonError(503, "Add ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID to .env.local, then restart the server.");
+  const config = dependencies.config ?? requestConfig(request);
+  if (!config || !config.apiKey || !config.voiceId) {
+    return jsonError(503, SETUP_MESSAGE);
   }
   const fetchImpl = dependencies.fetch ?? fetch;
   const link = linkAbort(request, dependencies.timeoutMs ?? DEFAULT_TIMEOUT_MS);
@@ -255,9 +263,9 @@ export async function handleVoiceSpeech(
   if (!isAllowedOrigin(request)) {
     return jsonError(403, "Request origin is not allowed.");
   }
-  const config = dependencies.config ?? environmentConfig();
-  if (!config.apiKey || !config.voiceId || !config.ttsModel) {
-    return jsonError(503, "Add ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID to .env.local, then restart the server.");
+  const config = dependencies.config ?? requestConfig(request);
+  if (!config || !config.apiKey || !config.voiceId || !config.ttsModel) {
+    return jsonError(503, SETUP_MESSAGE);
   }
   const input = await readSpeechText(request);
   if ("response" in input) return input.response;
