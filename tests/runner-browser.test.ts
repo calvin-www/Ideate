@@ -1,16 +1,26 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { chromium, type Browser, type Page } from "@playwright/test";
 import { createServer, type Server } from "node:http";
-import { existsSync } from "node:fs";
-import { createRunnerServer } from "../runner/server.mjs";
+import { createReadStream, existsSync } from "node:fs";
+import { mkdtemp, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { buildRunner, RUNNER_HEADERS } from "../scripts/build-runner.mjs";
 
 let app: Server;
-let runner: Server;
 let browser: Browser;
 let page: Page;
 let appOrigin: string;
 let runnerOrigin: string;
+let runnerDirectory: string;
 type Message = Record<string, unknown>;
+const mimeTypes: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".mjs": "text/javascript; charset=utf-8",
+  ".wasm": "application/wasm",
+  ".zip": "application/zip",
+  ".json": "application/json; charset=utf-8",
+};
 
 async function listen(server: Server) {
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
@@ -18,14 +28,40 @@ async function listen(server: Server) {
   if (!address || typeof address === "string") throw new Error("No listener");
   return `http://127.0.0.1:${address.port}`;
 }
-beforeAll(async () => {
-  app = createServer((_request, response) => {
-    response.setHeader("Content-Type", "text/html");
-    response.end("<!doctype html><html><body>Parent workspace</body></html>");
+/** Serves the parent page and the built `/runner/` files the way the app does. */
+function createAppServer() {
+  return createServer(async (request, response) => {
+    const path = new URL(request.url!, "http://app.invalid").pathname;
+    if (!path.startsWith("/runner/")) {
+      response.setHeader("Content-Type", "text/html");
+      response.end("<!doctype html><html><body>Parent workspace</body></html>");
+      return;
+    }
+    for (const { key, value } of RUNNER_HEADERS) response.setHeader(key, value);
+    const relative = path.slice(8);
+    const file = join(runnerDirectory, relative);
+    try {
+      if (!(await stat(file)).isFile()) throw new Error("Not a file");
+    } catch {
+      response.writeHead(404);
+      response.end("Not found");
+      return;
+    }
+    response.setHeader(
+      "Content-Type",
+      mimeTypes[relative.slice(relative.lastIndexOf("."))] ||
+        "application/octet-stream",
+    );
+    createReadStream(file).pipe(response);
   });
+}
+beforeAll(async () => {
+  runnerDirectory = await buildRunner(
+    await mkdtemp(join(tmpdir(), "ideate-runner-")),
+  );
+  app = createAppServer();
   appOrigin = await listen(app);
-  runner = createRunnerServer({ appOrigins: [appOrigin] });
-  runnerOrigin = await listen(runner);
+  runnerOrigin = appOrigin;
   browser = await chromium.launch(
     existsSync(chromium.executablePath())
       ? { headless: true }
@@ -36,7 +72,7 @@ beforeAll(async () => {
   await page.evaluate((runnerOrigin) => {
     const frame = document.createElement("iframe");
     frame.sandbox.add("allow-scripts", "allow-same-origin");
-    frame.src = runnerOrigin;
+    frame.src = `${runnerOrigin}/runner/index.html`;
     const events: Message[] = [];
     Object.assign(window, { runnerEvents: events, runnerFrame: frame });
     window.addEventListener("message", (event) => {
@@ -48,22 +84,19 @@ beforeAll(async () => {
         { protocol: "ideate-python", version: 1, type: "init" },
         runnerOrigin,
       );
-    localStorage.setItem("workspace-private-marker", "parent-only");
     document.body.append(frame);
   }, runnerOrigin);
   await ready();
 }, 60_000);
 afterAll(async () => {
   await browser?.close();
-  await Promise.all(
-    [app, runner].filter(Boolean).map(
-      (server) =>
-        new Promise<void>((resolve) => {
-          server.close(() => resolve());
-          server.closeAllConnections();
-        }),
-    ),
-  );
+  if (app)
+    await new Promise<void>((resolve) => {
+      app.close(() => resolve());
+      app.closeAllConnections();
+    });
+  if (runnerDirectory)
+    await rm(runnerDirectory, { recursive: true, force: true });
 });
 
 async function events(): Promise<Message[]> {
@@ -119,7 +152,7 @@ async function complete(id: string) {
   )!;
 }
 
-describe("separate-origin Python in a real browser", () => {
+describe("app-served Python runner in a real browser", () => {
   it.each(["concurrent", "scheduled"])(
     "enforces the watchdog when %s work blocks an apparently paused debugger",
     async (scenario) => {
@@ -355,32 +388,30 @@ describe("separate-origin Python in a real browser", () => {
     expect(output).toBe("42\nFalse False False\n");
   }, 30_000);
 
-  it("cannot read parent storage or connect to the application origin", async () => {
+  it("ignores messages that do not come from its own origin's parent", async () => {
     const frame = page
       .frames()
-      .find((frame) => frame.url().startsWith(runnerOrigin))!;
-    const result = await frame.evaluate(async (appOrigin) => {
-      let parentStorage = "";
-      try {
-        parentStorage =
-          parent.localStorage.getItem("workspace-private-marker") || "";
-      } catch (error) {
-        parentStorage = (error as Error).name;
-      }
-      let network = "";
-      try {
-        await fetch(appOrigin);
-        network = "allowed";
-      } catch (error) {
-        network = (error as Error).name;
-      }
-      return { parentStorage, network };
-    }, appOrigin);
-    expect(result).toEqual({
-      parentStorage: "SecurityError",
-      network: "TypeError",
-    });
-  });
+      .find((frame) => frame.url().startsWith(`${runnerOrigin}/runner/`))!;
+    // A message the frame posts to itself has the right origin but the wrong
+    // source window, so the bridge must drop it rather than start a run.
+    await frame.evaluate(() =>
+      window.postMessage(
+        {
+          protocol: "ideate-python",
+          version: 1,
+          type: "run",
+          id: "self-posted",
+          code: 'print("should not run")',
+        },
+        window.location.origin,
+      ),
+    );
+    await send({ type: "run", id: "after-self", code: 'print("ok")' });
+    expect(await complete("after-self")).toMatchObject({ status: "success" });
+    expect(
+      (await events()).some((event) => event.id === "self-posted"),
+    ).toBe(false);
+  }, 30_000);
 
   it("stops an infinite loop while the parent stays responsive, then runs again", async () => {
     await ready();

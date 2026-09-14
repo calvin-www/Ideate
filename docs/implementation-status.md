@@ -1,6 +1,6 @@
 # Implementation status
 
-Updated September 13, 2026. The user explicitly authorized implementation after approving the product plan, then authorized subagents. This is a fresh local implementation; the earlier repository remains a design reference. Nothing has been deployed.
+Updated September 13, 2026. The user explicitly authorized implementation after approving the product plan, then authorized subagents. This is a fresh implementation; the earlier repository remains a design reference. The app deploys as a single Next.js project with the Python runner bundled.
 
 ## Delivered
 
@@ -12,7 +12,7 @@ Updated September 13, 2026. The user explicitly authorized implementation after 
 - **Persistence:** Browser-owned workspace in IndexedDB, serialized saves, schema checks before save/load, validated and normalized import, JSON export, and preserved historical run/source excerpts. Invalid saved data is retained for recovery instead of being overwritten by defaults.
 - **Study controls:** Remembered auto-apply preference (on by default), using the same validation and undo path as reviewed changes. Clear chat cancels active work and deletes persisted messages. A global clear-data dialog provides separate board/code/notes clears and a full reset with a table-flip animation, confirmation, export access, keyboard handling, and reduced-motion support. Cleared domains discard their undo stacks; a full reset removes artifacts and history and restores the auto-apply default.
 - **Teaching instructions:** Answer-first explanations, short paragraphs, defined terms and symbols, concrete examples, respectful corrections, and detail matched to the student's question. These are prompt policies; model responses remain probabilistic.
-- **Isolated Python:** Separate origin, restrictive CSP, message validation, a Worker per run, local Pyodide assets, ten-second execution and 64 KiB output limits, immediate initial trace output, and restart after completion/Stop/failure. No application secrets or workspace data enter the runner beyond the submitted code.
+- **Isolated Python:** App-served runner iframe, restrictive CSP, message validation, a Worker per run, bundled Pyodide assets, ten-second execution and 64 KiB output limits, immediate initial trace output, and restart after completion/Stop/failure. No application secrets or workspace data enter the runner beyond the submitted code.
 
 ## Actual entry points
 
@@ -62,18 +62,18 @@ This verifies real explanation, notes editing, provenance, and tool continuation
 
 ## Running and demonstrating
 
-Follow the [root README](../README.md). `npm run dev` starts app origin `http://localhost:3000` and runner origin `http://localhost:3001`. `.env.local` holds the server-only Gemini key and is ignored by Git. `.env.example` contains placeholders only.
+Follow the [root README](../README.md). `npm run dev` copies the runner into `public/runner/` and starts the app at `http://localhost:3000`; the Python runner is served from that same origin. `.env.local` holds the server-only Gemini key and is ignored by Git. `.env.example` contains placeholders only.
 
 A [prepared study workspace](examples/README.md) contains an actual recorded run and accepted source-linked notes. It is explicitly labeled as prepared. Import it for a fallback demonstration, then run Python again for fresh output. No prerecorded response is presented as live AI.
 
 ## Remaining limits
 
 - Gemini quota, latency, and availability govern the live AI experience. A full pedagogical evaluation and three consecutive live rehearsals remain presentation preparation work.
-- The supported setup is local. Public deployment would need separate app/runner origins, deployment configuration, request/account controls, and a provider spending policy. None has been deployed.
+- The app deploys as one Next.js project (the Python runner is bundled by `npm run build`). Public deployment still needs request/account controls and a provider spending policy for the AI routes.
 - Source links into notes are implemented. A general relationship graph and board/code metadata links are not implemented.
 - Pending proposals and execution jobs do not resume after a browser reload. Saved work survives; unfinished messages/runs are marked interrupted.
 - Recent history is bounded to 200 messages, 40 undo changes, 100 runs, and 1,000 operation IDs. Reference retention prioritizes links in the current notebook. Editors limit text to 200,000 characters; the save/import boundary validates all documents. Very large drawings or reference sets can still reach their explicit document limits, at which point saving reports an error and export remains available.
-- The runner's origin/CSP/Worker boundary protects the app. Browser memory is not governed by a hard per-run memory quota.
+- The runner shares the app origin; its CSP, Worker, and empty-globals boundary is for study code, not hostile code. Browser memory is not governed by a hard per-run memory quota.
 - Multiplayer, voice, an animated companion, authentication, multiple projects, custom rooms, trace playback, and on-demand asset generation remain outside the MVP.
 
 The original [implementation plan](implementation-plan.md) retains the full acceptance and demo plan. Organizer clarification is still required before treating earlier work as reusable HackRice submission code; this implementation did not copy it.

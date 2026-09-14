@@ -2,7 +2,7 @@
 
 ## Status and design goal
 
-The local MVP is implemented. This document describes the delivered boundaries as of September 12, 2026, and identifies the remaining design targets. It has not been deployed as a public service. The supported setup runs the application and its Python runner as two local processes on separate origins.
+The local MVP is implemented. This document describes the delivered boundaries as of September 12, 2026, and identifies the remaining design targets. The application is one Next.js project; the Python runner is a set of static files the app serves from `/runner/` on its own origin, so a single Vercel deployment carries both.
 
 Deliver one persistent study workspace whose tools remain usable independently of the 3D scene and AI service. Prefer explicit state and operation boundaries over additional orchestration frameworks.
 
@@ -18,7 +18,7 @@ Deliver one persistent study workspace whose tools remain usable independently o
 | Workspace state       | Zustand plus explicit editor adapters                                | Shared artifact ownership above navigation                      |
 | Persistence           | IndexedDB with a versioned storage adapter                           | Local documents, run snapshots, and exportable workspace state  |
 | Product AI            | Gemini through the server-side @google/genai SDK                     | Shared multimodal context and function calls                    |
-| Python                | Pyodide in a dedicated Worker behind a separate-origin runner bridge | Browser execution without blocking editor interaction           |
+| Python                | Pyodide in a dedicated Worker behind an app-served iframe bridge     | Browser execution without blocking editor interaction           |
 
 The installed versions are pinned in [package.json](../package.json) and [package-lock.json](../package-lock.json). These files are the version authority; the stack table records why the components were chosen.
 
@@ -31,7 +31,7 @@ flowchart LR
     Workspace <--> Storage[IndexedDB]
     Workspace <--> Client[AI client and proposal controller]
     Client <--> Server[Server endpoint and Gemini]
-    Workspace <--> Bridge[Separate-origin runner bridge]
+    Workspace <--> Bridge[Runner iframe bridge]
     Bridge <--> Worker[Pyodide Worker]
 ```
 
@@ -93,15 +93,15 @@ Workspace JSON export/import and `.py`/`.md` downloads are implemented. Import c
 
 The agreed surface is one Python file with output and errors. There is no shell, REPL, arbitrary package installation, debugger, interactive `input()`, or multi-file filesystem interface.
 
-The runner iframe begins loading the pinned Pyodide runtime when the workspace mounts. Runtime and standard-library assets are served locally from the installed package. NumPy, Matplotlib, and arbitrary package downloads are not provided by the runner's asset allowlist.
+The runner iframe begins loading the pinned Pyodide runtime when the workspace mounts. `scripts/build-runner.mjs` copies the runner modules and the five Pyodide runtime files from the installed package into `public/runner/` before `next dev` and `next build`, and the app serves them at `/runner/`. NumPy, Matplotlib, and arbitrary package downloads are not copied, so they are unavailable.
 
 ### Isolation
 
-A Worker prevents computation from blocking the main thread but is not, by itself, a separate security origin. The application defaults to `http://127.0.0.1:3000`; the runner defaults to `http://localhost:3001`. `NEXT_PUBLIC_RUNNER_ORIGIN` selects the runner origin, and the runner has an explicit parent-origin allowlist. The runner creates its own Worker. `npm run dev` starts both local processes; the runner process receives a filtered environment without the model key.
+A Worker prevents computation from blocking the main thread but is not a separate security origin. The runner iframe is served from the application's own origin at `/runner/index.html`; the bridge accepts messages only from its parent window on that same origin, and the client accepts messages only from the exact iframe window. The runner creates its own Worker. An earlier design served the runner from a second process on a separate origin, which gave a real origin boundary but could not be deployed as a single hosted project; it was replaced by this app-served layout.
 
-The runner serves only its explicit static asset allowlist and uses CSP to restrict scripts, workers, and network connections to itself. It receives no application storage, model key, or workspace operation API. The bridge validates origin, exact source window, protocol version, run ID, message type, sequence, and payload limits. Python receives empty JavaScript globals. Output cannot issue workspace edits or AI calls.
+`/runner/*` responses carry a CSP that restricts scripts, workers, and network connections to the app origin, plus `X-Frame-Options: SAMEORIGIN`; every other path keeps `DENY`. The header list lives in `scripts/build-runner.mjs` so the browser test serves exactly what the app serves. The bridge validates origin, exact source window, protocol version, run ID, message type, sequence, and payload limits. Python receives empty JavaScript globals, and no application storage, model key, or workspace operation API is handed to the runner. Output cannot issue workspace edits or AI calls.
 
-This is a constrained local browser runner for study examples, not a general multi-tenant execution service. Browser memory use has no hard per-program quota. Separate-origin and CSP behavior have dedicated real-browser tests; production hosting and adversarial isolation beyond this browser boundary remain out of scope.
+Because the runner shares the app origin, a deliberately hostile program that escapes Pyodide's JavaScript bridge could reach the app's browser storage or API routes. This is a constrained browser runner for a learner's own study examples, not a multi-tenant execution service, and that trade-off is accepted. Browser memory use has no hard per-program quota. CSP and same-origin bridge behavior have dedicated real-browser tests.
 
 ### Run contract
 
@@ -152,7 +152,7 @@ Saved runs retain full source text, and references retain selected excerpts. The
 
 ## Validation evidence and remaining targets
 
-The repository has automated coverage for the boundaries below, including real Pyodide execution, separate-origin browser checks, board adapters, persistence/recovery, and AI controller state. The Gemini preflight has demonstrated text streaming, image recognition, and a function call continued with its thought signature intact. A live browser explanation also succeeded. Later live notes/model requests encountered intermittent provider 503/502 failures; successful access does not establish dependable capacity or full teaching quality. See [AI collaboration](ai-collaboration.md) for the bounded retry and model-evaluation limits.
+The repository has automated coverage for the boundaries below, including real Pyodide execution, app-served runner browser checks, board adapters, persistence/recovery, and AI controller state. The Gemini preflight has demonstrated text streaming, image recognition, and a function call continued with its thought signature intact. A live browser explanation also succeeded. Later live notes/model requests encountered intermittent provider 503/502 failures; successful access does not establish dependable capacity or full teaching quality. See [AI collaboration](ai-collaboration.md) for the bounded retry and model-evaluation limits.
 
 The following remain acceptance criteria to preserve as the implementation changes, not a claim that every UX scenario has been exhaustively evaluated:
 

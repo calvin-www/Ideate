@@ -8,7 +8,8 @@ import {
   INIT_TIMEOUT_MS,
 } from "../../../runner/protocol.mjs";
 
-export const RUNNER_URL = `${(process.env.NEXT_PUBLIC_RUNNER_ORIGIN || "http://localhost:3001").replace(/\/$/, "")}/`;
+/** Static runner assets the app serves itself; see `scripts/build-runner.mjs`. */
+export const RUNNER_URL = "/runner/index.html";
 export type RunnerResult = {
   status: "success" | "error" | "cancelled" | "timeout";
   error?: string;
@@ -58,7 +59,7 @@ type ActiveRun = {
   pauseId: number;
 };
 
-/** Narrow, text-only bridge to a credential-free origin. No workspace operations cross it. */
+/** Narrow, text-only bridge to the runner frame. No workspace operations cross it. */
 export class RunnerClient {
   private readonly origin: string;
   private active: ActiveRun | null = null;
@@ -70,9 +71,7 @@ export class RunnerClient {
     private readonly iframe: HTMLIFrameElement,
     private readonly callbacks: RunnerCallbacks,
   ) {
-    this.origin = new URL(RUNNER_URL).origin;
-    if (this.origin === window.location.origin)
-      throw new Error("Python must run on a separate origin.");
+    this.origin = window.location.origin;
     window.addEventListener("message", this.receive);
     iframe.addEventListener("load", this.handleLoad);
     this.initialize();
@@ -106,7 +105,7 @@ export class RunnerClient {
       this.finish({
         status: "error",
         error:
-          "Python could not load. Check that the runner server is running, then try Run again.",
+          "Python could not load. Reload the page, then try Run again.",
         durationMs: 0,
       });
       this.callbacks.onStatus("error");

@@ -18,7 +18,7 @@ AI output tokens are not capped by the app; the model's own output limit is the 
 npm run dev
 ```
 
-Open **http://localhost:3000**. The same command starts the separate Python runner at `http://localhost:3001`. Both listen on loopback. Use the same app hostname consistently because browser saves belong to that origin.
+Open **http://localhost:3000**. The command first copies the Python runner and Pyodide assets into `public/runner/` (ignored by Git), then starts the app; there is no second server. Use the same app hostname consistently because browser saves belong to that origin.
 
 For voice, also set `ELEVENLABS_API_KEY` and `ELEVENLABS_VOICE_ID` in `.env.local`, then restart the server. Click the header microphone button and allow microphone access. Gemini remains the study partner; ElevenLabs handles live transcription and speech. The partner speaks while whiteboard strokes or editor lines appear. The adjacent chat button opens the study partner panel; speaking does not open it automatically.
 
@@ -31,7 +31,7 @@ npm run build
 npm start
 ```
 
-The Python runtime ships with the npm dependency and runs in a separate-origin iframe and Web Worker. It supports standard-library study examples, printed output, errors, Run and Stop. **Debug** pauses before each Python line, highlights it, and shows local variables. **Step** enters your functions; **Continue** finishes the captured program. Debugging needs a browser with [WebAssembly JSPI support](https://blog.pyodide.org/posts/jspi/) and is tested in Chrome. It has no shell, package installer, or interactive input. Each run starts clean, with a ten-second execution budget and 64 KiB output limit. Time spent inspecting a responsive paused debugger does not consume the budget.
+The Python runtime ships with the npm dependency and runs in an iframe and Web Worker served by the app itself, so a plain `next build` deployment (for example Vercel) includes it. It supports standard-library study examples, printed output, errors, Run and Stop. **Debug** pauses before each Python line, highlights it, and shows local variables. **Step** enters your functions; **Continue** finishes the captured program. Debugging needs a browser with [WebAssembly JSPI support](https://blog.pyodide.org/posts/jspi/) and is tested in Chrome. It has no shell, package installer, or interactive input. Each run starts clean, with a ten-second execution budget and 64 KiB output limit. Time spent inspecting a responsive paused debugger does not consume the budget.
 
 ## Try the study loop
 
@@ -80,10 +80,10 @@ npm run test:e2e
 npm run check:gemini
 ```
 
-The Gemini check makes small live API requests and requires the local key. Other tests use fixtures for AI and actual Pyodide/Excalidraw where relevant. Browser tests use installed Chrome; runner tests can use installed Chromium instead. The production build and browser checks are separate from the live model availability check.
+The Gemini check makes small live API requests and requires the local key. Other tests use fixtures for AI and actual Pyodide/Excalidraw where relevant. Browser tests use installed Chrome; runner tests can use installed Chromium instead and serve the built runner files with the same headers as the app. The production build and browser checks are separate from the live model availability check.
 
 [Documentation](docs/README.md) covers product decisions, architecture, interaction design, and the original hackathon plan. [Implementation status](docs/implementation-status.md) records validation and remaining limits.
 
 Automated coverage includes local persistence, review and auto-apply, editor layouts, Python execution, microphone controls, board navigation during AI drawing, and text highlighting. A [prepared example](docs/examples/README.md) is available for Gemini outages or rate limits; its saved output is explicitly historical.
 
-This is a fresh implementation; the earlier Ideate repository was used as design reference. Nothing has been deployed.
+This is a fresh implementation; the earlier Ideate repository was used as design reference. The app deploys as a single Next.js project; `npm run build` bundles the Python runner.

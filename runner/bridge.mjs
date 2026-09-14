@@ -1,7 +1,8 @@
-import { APP_ORIGINS } from "./config.mjs";
 import { RunnerController } from "./controller.mjs";
 import { isTrustedParentEvent } from "./protocol.mjs";
 
+/** The runner is served by the application, so only its own origin may drive it. */
+const APP_ORIGINS = [window.location.origin];
 let parentOrigin;
 const controller = new RunnerController({
   createWorker: () =>

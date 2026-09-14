@@ -7,7 +7,7 @@ class BrowserWindow extends EventTarget {
   location = { origin: "http://localhost:3000" };
 }
 class Frame extends EventTarget {
-  src = "http://localhost:3001/";
+  src = "/runner/index.html";
   sent: unknown[] = [];
   contentWindow = {
     postMessage: (message: unknown, origin: string) =>
@@ -28,7 +28,7 @@ function setup() {
   });
   const emit = (
     data: Record<string, unknown>,
-    origin = "http://localhost:3001",
+    origin = "http://localhost:3000",
     source: unknown = frame.contentWindow,
   ) => {
     const event = new Event("message");
@@ -86,7 +86,7 @@ describe("application runner client", () => {
       text: "42\n",
     };
     emit(output, "https://untrusted.example");
-    emit(output, "http://localhost:3001", {});
+    emit(output, "http://localhost:3000", {});
     emit(output);
     emit(output);
     emit({ type: "complete", id: "wrong", status: "success", durationMs: 1 });
@@ -105,14 +105,14 @@ describe("application runner client", () => {
     client.stop();
     expect(frame.sent.at(-1)).toMatchObject({
       message: { type: "stop", id: "run-1" },
-      origin: "http://localhost:3001",
+      origin: "http://localhost:3000",
     });
     emit({ type: "complete", id: "run-1", status: "success", durationMs: 1 });
     expect(completions).toMatchObject([["run-1", { status: "cancelled" }]]);
     client.dispose();
   });
 
-  it("fails a queued run if the separate server cannot initialize", () => {
+  it("fails a queued run if the runner frame cannot initialize", () => {
     vi.useFakeTimers();
     const { client, completions, statuses } = setup();
     client.run({ id: "run-1", code: "print(42)" });
