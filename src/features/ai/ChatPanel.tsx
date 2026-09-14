@@ -123,7 +123,11 @@ export default function ChatPanel({ collaborator, onReference }: Props) {
     autoApplyChanges,
     setAutoApplyChanges,
   } = useWorkspace();
-  const geminiReady = useProviderKeys((s) => Boolean(s.keys.gemini));
+  // Assume a key until the store has read storage. Otherwise a visitor who has
+  // one sees the setup card flash on every load, and hears it announced.
+  const geminiReady = useProviderKeys(
+    (s) => !s.hydrated || Boolean(s.keys.gemini),
+  );
   const [confirmClear, setConfirmClear] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [undoError, setUndoError] = useState("");

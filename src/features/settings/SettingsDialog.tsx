@@ -1,8 +1,15 @@
 "use client";
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { X } from "lucide-react";
-import { useProviderKeys, type ProviderKeys } from "./providerKeys";
+import { KEY_PATTERN, useProviderKeys, type ProviderKeys } from "./providerKeys";
 import styles from "./SettingsDialog.module.css";
+
+const LABELS: Record<keyof ProviderKeys, string> = {
+  gemini: "Gemini API key",
+  elevenLabsKey: "ElevenLabs API key",
+  elevenLabsVoiceId: "ElevenLabs voice ID",
+};
+const FIELDS = Object.keys(LABELS) as (keyof ProviderKeys)[];
 
 export default function SettingsDialog() {
   const dialog = useRef<HTMLDialogElement>(null);
@@ -10,17 +17,23 @@ export default function SettingsDialog() {
   const keys = useProviderKeys((s) => s.keys);
   const warning = useProviderKeys((s) => s.storageWarning);
   const [draft, setDraft] = useState<ProviderKeys>(keys);
+  const [invalid, setInvalid] = useState("");
 
   useEffect(() => {
     const element = dialog.current;
     if (!element) return;
     if (open && !element.open) {
       setDraft(useProviderKeys.getState().keys);
+      setInvalid("");
       element.showModal();
     } else if (!open && element.open) element.close();
   }, [open]);
 
   const close = () => useProviderKeys.getState().closeSettings();
+  // save() rejects the whole draft when any field fails KEY_PATTERN, so a bad
+  // entry would otherwise discard the visitor's other, working keys in silence.
+  const firstInvalid = () =>
+    FIELDS.find((key) => draft[key] !== "" && !KEY_PATTERN.test(draft[key]));
   const field = (key: keyof ProviderKeys) => ({
     value: draft[key],
     onChange: (event: ChangeEvent<HTMLInputElement>) =>
@@ -42,6 +55,14 @@ export default function SettingsDialog() {
         method="dialog"
         onSubmit={(event) => {
           event.preventDefault();
+          const bad = firstInvalid();
+          if (bad) {
+            setInvalid(
+              `Check your ${LABELS[bad]}. It has to be 1 to 256 characters with no spaces, accents or emoji — paste it exactly as the provider shows it.`,
+            );
+            return;
+          }
+          setInvalid("");
           useProviderKeys.getState().save(draft);
           // A storage failure is only reported here, so stay open to show it.
           if (!useProviderKeys.getState().storageWarning) close();
@@ -105,9 +126,9 @@ export default function SettingsDialog() {
             works as text.
           </small>
         </label>
-        {warning && (
+        {(invalid || warning) && (
           <p className={styles.warning} role="alert">
-            {warning}
+            {invalid || warning}
           </p>
         )}
         <div className={styles.actions}>
@@ -117,6 +138,7 @@ export default function SettingsDialog() {
             onClick={() => {
               useProviderKeys.getState().clear();
               setDraft({ gemini: "", elevenLabsKey: "", elevenLabsVoiceId: "" });
+              setInvalid("");
             }}
           >
             Clear keys

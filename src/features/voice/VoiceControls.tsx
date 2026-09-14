@@ -15,7 +15,9 @@ type Props = {
 
 export default function VoiceControls({ voice, disabled, children }: Props) {
   const statusId = useId();
-  const voiceReady = useProviderKeys((s) => hasVoiceKeys(s.keys));
+  // Keep the microphone in place until the store has read storage, so it does
+  // not disappear and reappear for a visitor who has ElevenLabs settings.
+  const voiceReady = useProviderKeys((s) => !s.hydrated || hasVoiceKeys(s.keys));
   const writing = usePresentation((s) => s.current?.proposal.target);
   const working = useWorkspace((s) => Boolean(s.jobId));
   const labels = { off: "Microphone off", connecting: "Connecting microphone", listening: "Listening", thinking: "Thinking", speaking: "Speaking", paused: "Listening" };
