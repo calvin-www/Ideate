@@ -14,6 +14,7 @@ export default defineConfig({
   },
   webServer: {
     command: "npm run dev",
+    env: { ...process.env, IDEATE_E2E: "1" },
     url: "http://localhost:3000",
     reuseExistingServer: true,
     timeout: 180000,

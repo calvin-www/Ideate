@@ -1,5 +1,6 @@
 import { test, expect, type Page, type WebSocketRoute } from "@playwright/test";
 import { goToTool } from "./desk-navigation";
+import { loadBoardExample } from "./board-fixture";
 import { writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -174,7 +175,7 @@ test("board updates and deletions replace the provisional scene and preserve can
   await page.goto("/");
   await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
   await goToTool(page, "Whiteboard");
-  await page.getByRole("button", { name: "Load binary search example", exact: true }).click();
+  await loadBoardExample(page);
   await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
   const before = await exportedWorkspace(page);
   await page.getByRole("button", { name: "Turn on microphone", exact: true }).click();
@@ -207,7 +208,7 @@ test("a board pen stroke grows during speech and taking over interrupts it", asy
   await page.goto("/");
   await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
   await goToTool(page, "Whiteboard");
-  await expect(page.getByRole("button", { name: "Load binary search example", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Fit drawing", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Turn on microphone", exact: true }).click();
   const controls = page.getByRole("region", { name: "Voice controls" });
   await expect(controls).toContainText("Listening");

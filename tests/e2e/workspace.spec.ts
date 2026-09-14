@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { goToTool } from "./desk-navigation";
+import { loadBoardExample } from "./board-fixture";
 import { test as base, expect, type Page } from "@playwright/test";
 import type { Workspace } from "../../src/features/workspace/model";
 
@@ -231,14 +232,12 @@ test("code and Markdown notes retain edits across navigation and reload", async 
   ).toBeVisible();
 });
 
-test("the binary-search board example is included in exports and survives reload", async ({
+test("a seeded board is included in exports and survives reload", async ({
   page,
 }) => {
   await openWorkspace(page);
   await navigate(page, "Whiteboard");
-  await page
-    .getByRole("button", { name: "Load binary search example", exact: true })
-    .click();
+  await loadBoardExample(page);
   let saved: Workspace | undefined;
   await expect
     .poll(
@@ -263,9 +262,6 @@ test("the binary-search board example is included in exports and survives reload
   expect(restored.board.elements).toEqual(elements);
   await navigate(page, "Whiteboard");
   await expect(
-    page.getByRole("button", {
-      name: "Load binary search example",
-      exact: true,
-    }),
+    page.getByRole("button", { name: "Fit drawing", exact: true }),
   ).toBeVisible();
 });

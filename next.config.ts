@@ -6,6 +6,9 @@ import { RUNNER_HEADERS } from "./scripts/runner-headers.cjs";
 const config: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  // The dev tools badge sits on top of the whiteboard's zoom-out control, so
+  // Playwright cannot click it. Playwright sets this; `npm run dev` keeps it.
+  ...(process.env.IDEATE_E2E === "1" ? { devIndicators: false as const } : {}),
   async headers() {
     return [
       {

@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { goToTool } from "./desk-navigation";
+import { loadBoardExample } from "./board-fixture";
 import { test, expect, type Page } from "@playwright/test";
 import type { Workspace } from "../../src/features/workspace/model";
 
@@ -201,9 +202,7 @@ test("domain clearing is scoped and full clearing stops debugging, flips the tab
   page,
 }) => {
   await navigate(page, "Whiteboard");
-  await page
-    .getByRole("button", { name: "Load binary search example" })
-    .click();
+  await loadBoardExample(page);
   await expect
     .poll(async () => (await snapshot(page)).board.elements.length)
     .toBeGreaterThan(0);

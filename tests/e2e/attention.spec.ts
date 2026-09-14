@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { arrange, goToTool } from "./desk-navigation";
+import { loadBoardExample } from "./board-fixture";
 import { test, expect, type Page } from "@playwright/test";
 import type { Workspace } from "../../src/features/workspace/model";
 
@@ -373,9 +374,7 @@ test("whiteboard cues follow zoom and pan without editing the drawing", async ({
     },
   ]);
   await open(page, "Whiteboard");
-  await page
-    .getByRole("button", { name: "Load binary search example" })
-    .click();
+  await loadBoardExample(page);
   const before = await snapshot(page);
   await ask(page);
   await expect(page.locator('[data-attention-target="board"] [data-attention-box]')).toHaveCount(2);
