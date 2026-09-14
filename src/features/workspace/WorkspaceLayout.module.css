@@ -145,6 +145,16 @@
   color: #354b2f;
   box-shadow: 0 12px 40px #213b2926;
 }
+.menuTools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.menuTools .chip {
+  border-color: #dce4d3;
+  background: #f4f7ec;
+}
 .menu::backdrop {
   background: transparent;
 }
@@ -190,9 +200,6 @@
   outline-offset: 2px;
 }
 @media (max-width: 800px) {
-  .chip span {
-    display: none;
-  }
   .restore {
     padding: 6px;
     font-size: 10px;

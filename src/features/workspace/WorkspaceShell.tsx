@@ -105,7 +105,11 @@ export default function WorkspaceShell() {
         event.preventDefault();
         save();
       }
-      if (event.altKey && ["1", "2", "3", "4"].includes(event.key)) {
+      if (
+        event.altKey &&
+        !event.shiftKey &&
+        ["1", "2", "3", "4"].includes(event.key)
+      ) {
         event.preventDefault();
         useWorkspace
           .getState()

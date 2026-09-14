@@ -20,6 +20,7 @@ import {
   type EditorPanel,
   readPreviousArrangement,
   savePreviousArrangement,
+  clearPreviousArrangement,
   type LayoutPreference,
 } from "./layoutPersistence";
 import {
@@ -29,7 +30,9 @@ import {
   type Placement,
 } from "./editorDock";
 import DockedEditors from "./DockedEditors";
-import LayoutControls from "./LayoutControls";
+import ToolDock from "./ToolDock";
+import DropOverlay from "./DropOverlay";
+import { dropCommand, type DropPosition } from "./toolDrag";
 import { OutputLayoutContext } from "./OutputLayoutContext";
 import styles from "./WorkspaceLayout.module.css";
 
@@ -63,6 +66,9 @@ export default function WorkspaceLayout({ toolbar, renderEditor }: Props) {
   );
   const [dockState, setDockState] = useState<DockState | null>(null);
   const [start, setStart] = useState<OpenEditor | undefined>();
+  const [dragging, setDragging] = useState<EditorPanel | null>(null);
+  // Bumped when the saved arrangement ref changes outside a dock update.
+  const [, setSavedVersion] = useState(0);
   const initialLayout = useRef(saved.current?.layout ?? null);
   const initialFocus = useRef(navigationReveal);
   const controller = useRef<EditorDock | null>(null);
@@ -229,6 +235,62 @@ export default function WorkspaceLayout({ toolbar, renderEditor }: Props) {
       setEnabled(true);
     }
   }
+  function activate(tool: EditorPanel) {
+    const workspace = useWorkspace.getState();
+    if (narrow) {
+      if (tool !== focusedPanel) workspace.navigate(panelTool(tool));
+      return;
+    }
+    if (tool === focusedPanel) return;
+    if (advanced && dockState?.opened.includes(tool)) {
+      controller.current?.focus(tool);
+      return;
+    }
+    open(tool, "within");
+  }
+  function drop(
+    tool: EditorPanel,
+    position: DropPosition,
+    reference: EditorPanel | undefined,
+  ) {
+    const command = dropCommand({
+      tool,
+      position,
+      reference,
+      fallback: focusedPanel,
+    });
+    if (advanced) controller.current?.open(command);
+    else {
+      initialLayout.current = null;
+      setStart(command);
+      setDockState(null);
+      setEnabled(true);
+    }
+  }
+  function reset() {
+    singleEditor();
+    saved.current = null;
+    setSavedVersion((version) => version + 1);
+    if (!clearPreviousArrangement())
+      useWorkspace.setState({
+        notice:
+          "Arrangement reset for this session. Browser storage is unavailable.",
+      });
+  }
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (!event.altKey || !event.shiftKey || event.ctrlKey || event.metaKey)
+        return;
+      const index = ["Digit1", "Digit2", "Digit3", "Digit4"].indexOf(
+        event.code,
+      );
+      if (index < 0 || useWorkspace.getState().view === "desk") return;
+      event.preventDefault();
+      activate(tools[index]);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
   function singleEditor() {
     capture();
     if (saved.current) saved.current = { ...saved.current, enabled: false };
@@ -290,6 +352,14 @@ export default function WorkspaceLayout({ toolbar, renderEditor }: Props) {
       >
         <div ref={parking} hidden />
         <div ref={single} className={styles.single} hidden={advanced} />
+        {!advanced && dragging && !narrow && (
+          <DropOverlay
+            onDrop={(tool, placement) => {
+              setDragging(null);
+              open(tool, placement);
+            }}
+          />
+        )}
         {advanced && (
           <DockedEditors
             hosts={hosts}
@@ -302,6 +372,7 @@ export default function WorkspaceLayout({ toolbar, renderEditor }: Props) {
             onController={(instance) => {
               controller.current = instance;
             }}
+            onDrop={drop}
           />
         )}
         {visited.map((tool) =>
@@ -313,20 +384,21 @@ export default function WorkspaceLayout({ toolbar, renderEditor }: Props) {
         )}
         {toolbar &&
           createPortal(
-            <LayoutControls
+            <ToolDock
               focused={focusedPanel}
+              visible={visible}
+              opened={advanced ? (dockState?.opened ?? []) : [focused]}
               advanced={advanced}
               narrow={narrow}
               maximized={Boolean(advanced && dockState?.maximized)}
               hasSaved={Boolean(saved.current)}
-              open={open}
+              activate={activate}
+              float={(tool) => open(tool, "float")}
+              dragChange={setDragging}
               single={singleEditor}
               restoreSaved={restoreSaved}
-              maximize={() => controller.current?.maximize(focusedPanel)}
+              reset={reset}
               restore={() => controller.current?.restore()}
-              resize={(axis, delta) =>
-                controller.current?.resize(focusedPanel, axis, delta)
-              }
             />,
             toolbar,
           )}

@@ -69,6 +69,36 @@ export default function ToolDock(props: ToolDockProps) {
     props.opened.includes("code") || props.visible.includes("code")
       ? [...tools, "output"]
       : tools;
+  const chip = (tool: EditorPanel) => {
+    const Icon = icons[tool];
+    const visible = props.visible.includes(tool);
+    const focused = tool === props.focused;
+    return (
+      <button
+        key={tool}
+        type="button"
+        className={styles.chip}
+        aria-pressed={visible}
+        data-focused={focused || undefined}
+        data-tool={tool}
+        title={chipHint(props, tool)}
+        aria-label={`${panelTitles[tool]} tool`}
+        draggable={!props.narrow}
+        onClick={() => act(() => props.activate(tool))}
+        onDragStart={(event) => {
+          beginToolDrag(tool, event.dataTransfer);
+          props.dragChange(tool);
+        }}
+        onDragEnd={() => {
+          endToolDrag();
+          props.dragChange(null);
+        }}
+      >
+        <Icon size={14} aria-hidden="true" />
+        <span>{panelTitles[tool]}</span>
+      </button>
+    );
+  };
   const onDragOver = (event: DragEvent) => {
     if (props.narrow || !isToolDrag(event.dataTransfer)) return;
     event.preventDefault();
@@ -91,36 +121,7 @@ export default function ToolDock(props: ToolDockProps) {
         props.float(tool);
       }}
     >
-      {chips.map((tool) => {
-        const Icon = icons[tool];
-        const visible = props.visible.includes(tool);
-        const focused = tool === props.focused;
-        return (
-          <button
-            key={tool}
-            type="button"
-            className={styles.chip}
-            aria-pressed={visible}
-            data-focused={focused || undefined}
-            data-tool={tool}
-            title={chipHint(props, tool)}
-            aria-label={`${panelTitles[tool]} tool`}
-            draggable={!props.narrow}
-            onClick={() => props.activate(tool)}
-            onDragStart={(event) => {
-              beginToolDrag(tool, event.dataTransfer);
-              props.dragChange(tool);
-            }}
-            onDragEnd={() => {
-              endToolDrag();
-              props.dragChange(null);
-            }}
-          >
-            <Icon size={14} aria-hidden="true" />
-            <span>{panelTitles[tool]}</span>
-          </button>
-        );
-      })}
+      {!props.narrow && chips.map(chip)}
       {props.maximized && (
         <button type="button" className={styles.restore} onClick={props.restore}>
           <Minimize2 size={14} />
@@ -130,8 +131,8 @@ export default function ToolDock(props: ToolDockProps) {
       <button
         type="button"
         className={styles.overflow}
-        aria-label="Arrangement"
-        title="Arrangement options"
+        aria-label={props.narrow ? "Tools" : "Arrangement"}
+        title={props.narrow ? "Tools and arrangement" : "Arrangement options"}
         popoverTarget={id}
         onClick={(event) => {
           const bounds = event.currentTarget.getBoundingClientRect();
@@ -156,9 +157,12 @@ export default function ToolDock(props: ToolDockProps) {
         className={styles.menu}
         style={position}
       >
-        <strong>Arrangement</strong>
+        <strong>{props.narrow ? "Tools" : "Arrangement"}</strong>
         {props.narrow && (
-          <p>Use a wider window to split, tab, or float editors.</p>
+          <>
+            <p>Use a wider window to split, tab, or float editors.</p>
+            <div className={styles.menuTools}>{chips.map(chip)}</div>
+          </>
         )}
         <div className={styles.menuActions}>
           {props.advanced && (

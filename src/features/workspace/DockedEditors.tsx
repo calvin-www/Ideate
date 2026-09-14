@@ -22,6 +22,7 @@ import {
   type EditorPanel,
 } from "./layoutPersistence";
 import type { Tool } from "./model";
+import { draggedTool, isToolDrag, type DropPosition } from "./toolDrag";
 import styles from "./WorkspaceLayout.module.css";
 import "dockview-react/dist/styles/dockview.css";
 
@@ -113,6 +114,11 @@ type Props = {
   start?: OpenEditor;
   onChange: (state: DockState) => void;
   onController: (controller: EditorDock | null) => void;
+  onDrop: (
+    tool: EditorPanel,
+    position: DropPosition,
+    reference: EditorPanel | undefined,
+  ) => void;
 };
 export default function DockedEditors(props: Props) {
   const current = useRef(props);
@@ -141,10 +147,31 @@ export default function DockedEditors(props: Props) {
         floatingGroupBounds="boundedWithinViewport"
         floatingGroupDragHandle="titlebar"
         defaultRenderer="always"
+        onDidDrop={(event) => {
+          const native = event.nativeEvent;
+          const tool = draggedTool(
+            native instanceof DragEvent ? native.dataTransfer : null,
+          );
+          if (!tool) return;
+          const reference = event.group?.activePanel?.id;
+          current.current.onDrop(
+            tool,
+            event.position,
+            isEditorPanel(reference) ? reference : undefined,
+          );
+        }}
         onReady={({ api }) => {
           const instance = new EditorDock(api, (state) =>
             current.current.onChange(state),
           );
+          api.onUnhandledDragOver((event) => {
+            const native = event.nativeEvent;
+            const accepted =
+              native instanceof DragEvent
+                ? isToolDrag(native.dataTransfer)
+                : draggedTool() !== null;
+            if (accepted) event.accept();
+          });
           controller.current = instance;
           current.current.onController(instance);
           instance.initialize(
