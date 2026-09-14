@@ -9,6 +9,7 @@ import {
   MessageCircle,
   Monitor,
   PenTool,
+  Settings,
   Table2,
   Upload,
   X,
@@ -27,6 +28,8 @@ import CodePanel from "../code/CodePanel";
 import NotePanel from "../notes/NotePanel";
 import SpreadsheetPanel from "../spreadsheet/SpreadsheetPanel";
 import WorkspaceDataControls from "./WorkspaceDataControls";
+import SettingsDialog from "../settings/SettingsDialog";
+import { useProviderKeys } from "../settings/providerKeys";
 
 const WorkspaceLayout = dynamic(() => import("./WorkspaceLayout"), { ssr: false });
 
@@ -80,6 +83,7 @@ export default function WorkspaceShell() {
   const sourceDialog = useRef<HTMLElement>(null);
   const sourceOpener = useRef<HTMLElement | null>(null);
   useEffect(() => {
+    useProviderKeys.getState().hydrate();
     void hydrateWorkspace();
     try {
       setFlat(localStorage.getItem("ideate:desk-view") === "simple");
@@ -295,6 +299,14 @@ export default function WorkspaceShell() {
           >
             <Upload size={17} />
           </button>
+          <button
+            className="icon-button"
+            title="Settings"
+            aria-label="Settings"
+            onClick={() => useProviderKeys.getState().openSettings()}
+          >
+            <Settings size={17} />
+          </button>
           <VoiceControls voice={voice} disabled={!hydrated}>
             <button
               className={`icon-button partner-toggle ${chatOpen ? "selected" : ""}`}
@@ -323,6 +335,7 @@ export default function WorkspaceShell() {
           />
         </div>
       </header>
+      <SettingsDialog />
       <input
         ref={importInput}
         type="file"

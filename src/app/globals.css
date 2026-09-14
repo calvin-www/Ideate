@@ -638,6 +638,16 @@ svg {
 .chat-composer textarea::placeholder {
   color: #98a08d;
 }
+.chat-setup {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+.chat-setup p {
+  margin: 0;
+  font-size: 13px;
+  color: #63705e;
+}
 .composer-bottom {
   display: flex;
   justify-content: space-between;

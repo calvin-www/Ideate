@@ -1,0 +1,57 @@
+.dialog {
+  width: min(470px, calc(100vw - 32px));
+  max-height: calc(100dvh - 40px);
+  overflow: auto;
+  padding: 24px;
+  border: 1px solid #c7cebf;
+  border-radius: 12px;
+  color: #26382f;
+  background: #fafaf7;
+  box-shadow: 0 18px 70px #152a2633;
+}
+.dialog::backdrop {
+  background: #152a265e;
+}
+.heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.heading h2 {
+  margin: 0;
+  font:
+    23px Georgia,
+    serif;
+}
+.dialog p,
+.dialog small {
+  font-size: 13px;
+  line-height: 1.65;
+  color: #63705e;
+}
+.field {
+  display: grid;
+  gap: 4px;
+  margin-top: 14px;
+  font-size: 13px;
+}
+.field input {
+  padding: 8px 10px;
+  border: 1px solid #c7cebf;
+  border-radius: 6px;
+  font:
+    13px ui-monospace,
+    monospace;
+  background: #fff;
+}
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 22px;
+}
+.warning {
+  color: #824d34;
+}

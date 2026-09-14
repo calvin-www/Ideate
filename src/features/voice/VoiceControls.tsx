@@ -4,6 +4,7 @@ import { LoaderCircle, Mic, MicOff, Square } from "lucide-react";
 import type { useVoiceSession } from "./useVoiceSession";
 import { useWorkspace } from "../workspace/store";
 import { usePresentation } from "./presentation";
+import { hasVoiceKeys, useProviderKeys } from "../settings/providerKeys";
 import styles from "./VoiceControls.module.css";
 
 type Props = {
@@ -14,6 +15,7 @@ type Props = {
 
 export default function VoiceControls({ voice, disabled, children }: Props) {
   const statusId = useId();
+  const voiceReady = useProviderKeys((s) => hasVoiceKeys(s.keys));
   const writing = usePresentation((s) => s.current?.proposal.target);
   const working = useWorkspace((s) => Boolean(s.jobId));
   const labels = { off: "Microphone off", connecting: "Connecting microphone", listening: "Listening", thinking: "Thinking", speaking: "Speaking", paused: "Listening" };
@@ -23,18 +25,20 @@ export default function VoiceControls({ voice, disabled, children }: Props) {
 
   return (
     <section className={styles.controls} aria-label="Voice controls">
-      <button
-        className={`icon-button ${styles.microphone} ${connected && !voice.muted ? styles.active : ""}`}
-        aria-label={microphoneLabel}
-        aria-describedby={statusId}
-        aria-pressed={connected && !voice.muted}
-        title={`${microphoneLabel} · ${status}`}
-        disabled={disabled || voice.status === "connecting"}
-        onClick={() => connected ? voice.toggleMute() : void voice.start()}
-      >
-        {voice.status === "connecting" ? <LoaderCircle size={17} className="spin" /> : voice.muted ? <MicOff size={17} /> : <Mic size={17} />}
-        {connected && !voice.muted && <i className={styles.indicator} aria-hidden="true" />}
-      </button>
+      {voiceReady && (
+        <button
+          className={`icon-button ${styles.microphone} ${connected && !voice.muted ? styles.active : ""}`}
+          aria-label={microphoneLabel}
+          aria-describedby={statusId}
+          aria-pressed={connected && !voice.muted}
+          title={`${microphoneLabel} · ${status}`}
+          disabled={disabled || voice.status === "connecting"}
+          onClick={() => connected ? voice.toggleMute() : void voice.start()}
+        >
+          {voice.status === "connecting" ? <LoaderCircle size={17} className="spin" /> : voice.muted ? <MicOff size={17} /> : <Mic size={17} />}
+          {connected && !voice.muted && <i className={styles.indicator} aria-hidden="true" />}
+        </button>
+      )}
       {children}
       <button
         className={`icon-button ${styles.stop}`}
@@ -45,8 +49,12 @@ export default function VoiceControls({ voice, disabled, children }: Props) {
       >
         <Square size={15} fill="currentColor" />
       </button>
-      <span id={statusId} className={styles.status} role="status">{status}</span>
-      {voice.transcript && <span className={styles.transcript}>{voice.transcript}</span>}
+      {voiceReady && (
+        <>
+          <span id={statusId} className={styles.status} role="status">{status}</span>
+          {voice.transcript && <span className={styles.transcript}>{voice.transcript}</span>}
+        </>
+      )}
       {voice.error && <p className={styles.error} role="alert">{voice.error}</p>}
     </section>
   );
