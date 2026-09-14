@@ -198,3 +198,27 @@
     font-size: 10px;
   }
 }
+.dropOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: 22% 1fr 22%;
+  grid-template-rows: 22% 1fr 22%;
+  pointer-events: none;
+}
+.dropRegion {
+  pointer-events: auto;
+  border: 1px dashed transparent;
+  border-radius: 8px;
+  transition: background 120ms;
+}
+.dropRegion[data-placement="left"] { grid-column: 1; grid-row: 1 / 4; }
+.dropRegion[data-placement="right"] { grid-column: 3; grid-row: 1 / 4; }
+.dropRegion[data-placement="above"] { grid-column: 2; grid-row: 1; }
+.dropRegion[data-placement="within"] { grid-column: 2; grid-row: 2; }
+.dropRegion[data-placement="below"] { grid-column: 2; grid-row: 3; }
+.dropRegion[data-active] {
+  background: #a5c59133;
+  border-color: #7e9a69;
+}
