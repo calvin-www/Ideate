@@ -17,6 +17,7 @@ import {
 } from "./layoutPersistence";
 import type { Tool } from "./model";
 import type { Placement } from "./editorDock";
+import { presetIds, presets, type PresetId } from "./presets";
 import styles from "./WorkspaceLayout.module.css";
 
 type Props = {
@@ -31,6 +32,8 @@ type Props = {
   maximize: () => void;
   restore: () => void;
   resize: (axis: "width" | "height", delta: number) => void;
+  preset: PresetId;
+  applyPreset: (id: PresetId) => void;
 };
 export default function LayoutControls(props: Props) {
   const id = useId();
@@ -42,6 +45,17 @@ export default function LayoutControls(props: Props) {
   };
   return (
     <div className={styles.controls}>
+      <select
+        className={styles.presetPicker}
+        aria-label="Layout preset"
+        title="Layout preset"
+        value={props.preset}
+        onChange={(event) => props.applyPreset(event.target.value as PresetId)}
+      >
+        {presetIds.map((id) => (
+          <option key={id} value={id}>{presets[id].label}</option>
+        ))}
+      </select>
       {props.maximized && (
         <button
           type="button"

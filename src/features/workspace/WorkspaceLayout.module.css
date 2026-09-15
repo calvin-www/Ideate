@@ -88,6 +88,14 @@
   align-items: center;
   gap: 10px;
 }
+.presetPicker {
+  padding: 5px 8px;
+  border: 1px solid #c7cebf;
+  border-radius: 6px;
+  background: #fff;
+  font: 12px system-ui, sans-serif;
+  color: #26382f;
+}
 .layoutButton,
 .restore {
   display: inline-flex;

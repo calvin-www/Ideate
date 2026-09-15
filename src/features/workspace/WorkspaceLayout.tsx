@@ -31,6 +31,7 @@ import {
 import DockedEditors from "./DockedEditors";
 import LayoutControls from "./LayoutControls";
 import { OutputLayoutContext } from "./OutputLayoutContext";
+import { presets, readPresetId, savePresetId, type PresetId } from "./presets";
 import styles from "./WorkspaceLayout.module.css";
 
 const labels: Record<EditorPanel, string> = {
@@ -51,18 +52,25 @@ export default function WorkspaceLayout({ toolbar, renderEditor }: Props) {
   const visited = useWorkspace((s) => s.visited);
   const navigationEpoch = useWorkspace((s) => s.navigationEpoch);
   const navigationReveal = useWorkspace((s) => s.navigationReveal);
+  const navigationPreset = useWorkspace((s) => s.navigationPreset);
   const [preference] = useState(readPreviousArrangement);
   const saved = useRef<LayoutPreference | null>(preference);
   // Desk objects launch a single tool. Arrangements are restored only on request.
   const [enabled, setEnabled] = useState(false);
-  const handledNavigation = useRef(navigationEpoch);
+  // WorkspaceLayout mounts only after hydration, so a preset navigated before
+  // mount (Task 9's entry navigation) has already bumped navigationEpoch.
+  // Start the handled ref one behind so the effect below still runs once.
+  const handledNavigation = useRef(
+    navigationPreset ? navigationEpoch - 1 : navigationEpoch,
+  );
   const enabledRef = useRef(enabled);
   enabledRef.current = enabled;
   const [narrow, setNarrow] = useState(
     () => matchMedia("(max-width: 800px)").matches,
   );
   const [dockState, setDockState] = useState<DockState | null>(null);
-  const [start, setStart] = useState<OpenEditor | undefined>();
+  const [opens, setOpens] = useState<OpenEditor[] | undefined>();
+  const [currentPreset, setCurrentPreset] = useState<PresetId>(readPresetId);
   const initialLayout = useRef(saved.current?.layout ?? null);
   const initialFocus = useRef(navigationReveal);
   const controller = useRef<EditorDock | null>(null);
@@ -116,7 +124,7 @@ export default function WorkspaceLayout({ toolbar, renderEditor }: Props) {
     const change = () => {
       capture();
       initialLayout.current = saved.current?.layout ?? null;
-      setStart(undefined);
+      setOpens(undefined);
       setNarrow(media.matches);
     };
     media.addEventListener("change", change);
@@ -173,11 +181,23 @@ export default function WorkspaceLayout({ toolbar, renderEditor }: Props) {
     if (saved.current) saved.current = { ...saved.current, enabled: false };
     setEnabled(false);
     setDockState(null);
-    setStart(undefined);
+    setOpens(undefined);
     persist();
+    if (navigationPreset) {
+      const preset = presets[navigationPreset];
+      initialLayout.current = null;
+      initialFocus.current = null;
+      if (preset.opens.length) {
+        setOpens(preset.opens);
+        setEnabled(true);
+      }
+      savePresetId(navigationPreset);
+      setCurrentPreset(navigationPreset);
+    }
   }, [
     navigationEpoch,
     navigationReveal,
+    navigationPreset,
     page,
     advanced,
     capture,
@@ -224,7 +244,7 @@ export default function WorkspaceLayout({ toolbar, renderEditor }: Props) {
     if (advanced) controller.current?.open(command);
     else {
       initialLayout.current = null;
-      setStart(command);
+      setOpens([command]);
       setDockState(null);
       setEnabled(true);
     }
@@ -235,7 +255,7 @@ export default function WorkspaceLayout({ toolbar, renderEditor }: Props) {
     enabledRef.current = false;
     setEnabled(false);
     setDockState(null);
-    setStart(undefined);
+    setOpens(undefined);
     useWorkspace.getState().focusTool(panelTool(focusedPanel));
     persist();
   }
@@ -243,7 +263,7 @@ export default function WorkspaceLayout({ toolbar, renderEditor }: Props) {
     if (!saved.current) return;
     initialLayout.current = saved.current?.layout ?? null;
     initialFocus.current = null;
-    setStart(undefined);
+    setOpens(undefined);
     setDockState(null);
     setEnabled(true);
   }
@@ -297,7 +317,7 @@ export default function WorkspaceLayout({ toolbar, renderEditor }: Props) {
             initialLayout={initialLayout.current}
             initialTool={focused}
             initialFocus={initialFocus.current}
-            start={start}
+            opens={opens}
             onChange={changed}
             onController={(instance) => {
               controller.current = instance;
@@ -322,6 +342,12 @@ export default function WorkspaceLayout({ toolbar, renderEditor }: Props) {
               open={open}
               single={singleEditor}
               restoreSaved={restoreSaved}
+              preset={currentPreset}
+              applyPreset={(id) =>
+                useWorkspace
+                  .getState()
+                  .navigate(presets[id].start, { preset: id })
+              }
               maximize={() => controller.current?.maximize(focusedPanel)}
               restore={() => controller.current?.restore()}
               resize={(axis, delta) =>

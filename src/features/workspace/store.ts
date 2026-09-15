@@ -14,6 +14,7 @@ import { loadWorkspace, saveWorkspace } from "./persistence";
 import { checkAttention, type AttentionState } from "../ai/attention";
 import { clearWorkspaceData, type ClearScope } from "./clearWorkspace";
 import type { BoardFiles } from "../board/images";
+import type { PresetId } from "./presets";
 
 type Store = {
   data: Workspace;
@@ -25,6 +26,7 @@ type Store = {
   visibleTools: Tool[];
   navigationEpoch: number;
   navigationReveal: Tool | null;
+  navigationPreset: PresetId | null;
   focusTool: (tool: Tool) => void;
   chatOpen: boolean;
   autoApplyChanges: boolean;
@@ -41,7 +43,7 @@ type Store = {
   clearData: (scope: ClearScope) => void;
   editorEpochs: Record<Tool, number>;
   setData: (update: (data: Workspace) => Workspace) => void;
-  navigate: (view: View, options?: { reveal?: boolean }) => void;
+  navigate: (view: View, options?: { reveal?: boolean; preset?: PresetId }) => void;
   setText: (target: "code" | "notes" | "spreadsheet", text: string) => void;
   setBoard: (elements: BoardElement[], files?: BoardFiles) => void;
 };
@@ -55,6 +57,7 @@ export const useWorkspace = create<Store>((set, get) => ({
   visibleTools: [],
   navigationEpoch: 0,
   navigationReveal: null,
+  navigationPreset: null,
   focusTool: (tool) => {
     if (get().view !== tool) set({ view: tool, selection: null });
   },
@@ -118,6 +121,7 @@ export const useWorkspace = create<Store>((set, get) => ({
       page: view,
       navigationEpoch: get().navigationEpoch + 1,
       navigationReveal: options?.reveal && view !== "desk" ? view : null,
+      navigationPreset: options?.preset ?? null,
       selection: options?.reveal && get().view === view ? get().selection : null,
       visited:
         view === "desk"
