@@ -93,6 +93,51 @@ async function snapshot(page: Page): Promise<Workspace> {
   );
 }
 
+// Draws real rectangles on the live Excalidraw canvas (keyboard shortcut +
+// mouse drag), the same way a user would. This avoids two other seeding
+// paths tried for this fixture: a "/src/..." dynamic import, which Next dev
+// does not serve (unlike tests/board-adapter.test.ts's own Vite dev server),
+// and the app's workspace-import file input, which bumps editorEpochs.board
+// and remounts the Excalidraw instance — that remount, immediately followed
+// by an attention cue targeting the freshly drawn elements, reproduced a real
+// "Maximum update depth exceeded" crash in BoardEditor. Drawing in place, like
+// the removed "Load binary search example" button used to, never remounts.
+async function drawRectangles(page: Page, count: number) {
+  await page.locator(".excalidraw__canvas.interactive").waitFor();
+  await page.locator(".excalidraw").focus();
+  const box = (await page.locator(".excalidraw__canvas.interactive").boundingBox())!;
+  for (let i = 0; i < count; i++) {
+    await page.keyboard.press("r");
+    await page.mouse.move(box.x + 60 + i * 500, box.y + 60);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 60 + i * 500 + 300, box.y + 60 + 200, { steps: 5 });
+    await page.mouse.up();
+    // Deselect so the "Selected shape actions" panel that appears for a
+    // selected shape doesn't linger and steal focus before the next shape.
+    await page.keyboard.press("Escape");
+  }
+  // A lingering board selection scopes the *next* AI request's board context
+  // down to just the selected element(s) (see captureContext in
+  // useCollaborator.ts) — the same deliberate scoping used for code/notes
+  // selections. Click empty canvas, well clear of the toolbar and the
+  // shapes just drawn, to guarantee nothing stays selected so the fixture
+  // below sees the full board.
+  await page.mouse.click(box.x + box.width - 60, box.y + box.height - 60);
+}
+
+// Next's dev-tools badge renders into a fixed <nextjs-portal> pinned to the
+// bottom-left of the viewport, which is exactly where Excalidraw puts its
+// zoom controls: the badge covers the "Zoom out" button, so Playwright's
+// actionability check reports the portal intercepting the click and the
+// click never lands. The badge exists only under `next dev`, never in a
+// production build, so taking it out of hit-testing lets the test click the
+// real app button instead of weakening what that click is meant to prove.
+async function ignoreDevToolsBadge(page: Page) {
+  await page.addStyleTag({
+    content: "nextjs-portal { pointer-events: none !important; }",
+  });
+}
+
 test("journal selection stays visible on every selected line", async ({ page }, testInfo) => {
   await open(page, "Journal");
   const journal = page.getByRole("region", { name: "Study journal", exact: true });
@@ -189,6 +234,11 @@ for (const origin of ["Computer", "Journal", "Desk", "Narrow"]) {
       },
     ]);
     await open(page, "Computer");
+    const editor = page
+      .getByRole("region", { name: "Python workspace", exact: true })
+      .getByRole("textbox");
+    await editor.click();
+    await page.keyboard.insertText("values = [2, 5, 8, 12, 16]\n");
     await page
       .getByRole("button", { name: "Move output", exact: true })
       .click();
@@ -196,9 +246,6 @@ for (const origin of ["Computer", "Journal", "Desk", "Narrow"]) {
       .getByRole("dialog", { name: "Output position" })
       .getByRole("button", { name: "Tab with editor", exact: true })
       .click();
-    const editor = page
-      .getByRole("region", { name: "Python workspace", exact: true })
-      .getByRole("textbox");
     await expect(editor).toBeHidden();
     if (origin === "Narrow") await page.setViewportSize({ width: 600, height: 850 });
     if (origin !== "Computer" && origin !== "Narrow") await navigate(page, origin);
@@ -252,6 +299,9 @@ test("Python highlights preserve selections and source, follow scroll, and clear
     .getByRole("region", { name: "Python workspace", exact: true })
     .getByRole("textbox");
   await editor.click();
+  await page.keyboard.insertText(
+    "def find(values, target):\n    low, high = 0, len(values) - 1\n    while low <= high:\n        mid = (low + high) // 2\n        if values[mid] == target:\n            return mid\n        if values[mid] < target:\n            low = mid + 1\n        else:\n            high = mid - 1\n    return -1\n",
+  );
   await editor.press("ControlOrMeta+End");
   await page.keyboard.insertText("\n" + "# More practice\n".repeat(40));
   await editor.press("ControlOrMeta+Home");
@@ -373,9 +423,8 @@ test("whiteboard cues follow zoom and pan without editing the drawing", async ({
     },
   ]);
   await open(page, "Whiteboard");
-  await page.evaluate(
-    "import('/src/features/board/adapter.ts').then(async (adapter) => { const { useWorkspace } = await import('/src/features/workspace/store.ts'); const elements = await adapter.buildBoardPatch([], { additions: [{ type: 'rectangle', x: 100, y: 100, width: 80, height: 60, text: '12' }, { type: 'rectangle', x: 200, y: 100, width: 80, height: 60, text: '16' }] }); useWorkspace.getState().setBoard(elements); })",
-  );
+  await ignoreDevToolsBadge(page);
+  await drawRectangles(page, 2);
   const before = await snapshot(page);
   await ask(page);
   await expect(page.locator('[data-attention-target="board"] [data-attention-box]')).toHaveCount(2);

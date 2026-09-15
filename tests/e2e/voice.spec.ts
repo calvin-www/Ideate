@@ -40,6 +40,35 @@ async function exportedWorkspace(page: Page): Promise<Workspace> {
   return JSON.parse(await readFile((await (await downloading).path())!, "utf8"));
 }
 
+// Draws real text elements on the live Excalidraw canvas by double-clicking
+// empty canvas with the selection tool (the same shortcut the canvas itself
+// advertises: "you can also add text by double-clicking anywhere with the
+// selection tool"), the same way a user would. This avoids two other seeding
+// paths tried for this fixture: a "/src/..." dynamic import, which Next dev
+// does not serve (unlike tests/board-adapter.test.ts's own Vite dev server),
+// and the app's workspace-import file input, which bumps editorEpochs.board
+// and remounts the Excalidraw instance — that remount, immediately followed
+// by a live voice board edit and its drawing preview, reproduced a real
+// "Maximum update depth exceeded" crash in BoardEditor 100% of the time
+// (confirmed independent of timing: even a 500ms settle wait after import
+// did not avoid it). Drawing in place, like the removed "Load binary search
+// example" button used to, never remounts and never crashes.
+async function drawLabels(page: Page, labels: string[]) {
+  await page.locator(".excalidraw__canvas.interactive").waitFor();
+  await page.locator(".excalidraw").focus();
+  const box = (await page.locator(".excalidraw__canvas.interactive").boundingBox())!;
+  for (const [i, text] of labels.entries()) {
+    await page.mouse.dblclick(box.x + 100 + i * 220, box.y + 300);
+    await page.keyboard.type(text);
+    // Commit by clicking empty canvas (a blur), which also guarantees
+    // nothing stays selected afterwards. A lingering board selection scopes
+    // the *next* AI request's board context down to just the selected
+    // element(s) (see captureContext in useCollaborator.ts) — the same
+    // deliberate scoping used for code/notes selections.
+    await page.mouse.click(box.x + box.width - 60, box.y + box.height - 60);
+  }
+}
+
 async function openChat(page: Page) {
   const toggle = page.getByRole("button", { name: "Toggle study partner", exact: true });
   if (await toggle.getAttribute("aria-expanded") === "false") await toggle.click();
@@ -174,9 +203,7 @@ test("board updates and deletions replace the provisional scene and preserve can
   await page.goto("/");
   await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
   await goToTool(page, "Whiteboard");
-  await page.evaluate(
-    "import('/src/features/board/adapter.ts').then(async (adapter) => { const { useWorkspace } = await import('/src/features/workspace/store.ts'); const elements = await adapter.buildBoardPatch([], { additions: [{ type: 'text', x: 90, y: 60, width: 180, height: 30, text: 'low = 0' }, { type: 'text', x: 336, y: 60, width: 180, height: 30, text: 'high = 7' }] }); useWorkspace.getState().setBoard(elements); })",
-  );
+  await drawLabels(page, ["low = 0", "high = 7"]);
   await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
   const before = await exportedWorkspace(page);
   await page.getByRole("button", { name: "Turn on microphone", exact: true }).click();

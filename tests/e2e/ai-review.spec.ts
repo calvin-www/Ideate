@@ -117,11 +117,19 @@ function journal(page: Page) {
   return page.getByRole("region", { name: "Study journal", exact: true });
 }
 
-async function openJournal(page: Page) {
+async function openJournal(page: Page, seedCode?: string) {
   await page.goto("/");
   await expect(page.getByText("Saved locally", { exact: true })).toBeVisible({
     timeout: 30_000,
   });
+  if (seedCode) {
+    await goToTool(page, "Computer");
+    const editor = page
+      .getByRole("region", { name: "Python workspace", exact: true })
+      .getByRole("textbox");
+    await editor.click();
+    await page.keyboard.insertText(seedCode);
+  }
   await goToTool(page, "Journal");
   await expect(journal(page).getByRole("textbox")).toBeVisible();
   await page
@@ -190,7 +198,7 @@ test("Apply and Reject preserve review control, and an accepted source link open
       };
     },
   ]);
-  await openJournal(page);
+  await openJournal(page, "values = [2, 5, 8, 12, 16]\nprint(values)\n");
   const before = await snapshot(page);
   await askForReview(page, "Suggest one sentence for my journal.");
   expect((await snapshot(page)).notes.text).toBe(before.notes.text);
