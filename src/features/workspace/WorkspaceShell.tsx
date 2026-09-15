@@ -15,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { useWorkspace, hydrateWorkspace, flushSave } from "./store";
+import { presets, readPresetId } from "./presets";
 import { type ArtifactRef, type Tool, type View } from "./model";
 import { downloadFile, readSavedWorkspace } from "./persistence";
 import { adapters } from "./adapters";
@@ -84,7 +85,11 @@ export default function WorkspaceShell() {
   const sourceOpener = useRef<HTMLElement | null>(null);
   useEffect(() => {
     useProviderKeys.getState().hydrate();
-    void hydrateWorkspace();
+    const wantsDesk = new URLSearchParams(window.location.search).get("view") === "desk";
+    const presetId = readPresetId();
+    void hydrateWorkspace(
+      wantsDesk ? { view: "desk" } : { view: presets[presetId].start, preset: presetId },
+    );
     try {
       setFlat(localStorage.getItem("ideate:desk-view") === "simple");
     } catch {
@@ -236,8 +241,8 @@ export default function WorkspaceShell() {
             e.preventDefault();
             open("desk");
           }}
-          aria-label="Ideate, back to desk"
-          title={view === "desk" ? "Ideate" : "Back to desk"}
+          aria-label="Ideate, desk"
+          title={view === "desk" ? "Ideate" : "Desk"}
         >
           <svg
             width="30"
@@ -258,7 +263,7 @@ export default function WorkspaceShell() {
             <span>
             ideate<span className="brand-dot">.</span>
             </span>
-            {view !== "desk" && <small className="brand-back">Back to desk</small>}
+            {view !== "desk" && <small className="brand-back">Desk</small>}
           </span>
         </a>
         <div className="header-actions">

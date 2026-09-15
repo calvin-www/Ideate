@@ -100,8 +100,11 @@ export const useWorkspace = create<Store>((set, get) => ({
             recoveryNeeded: false,
             saveError: "",
             notice: "",
-            view: "desk" as const,
-            page: "desk" as const,
+            view: "code" as const,
+            page: "code" as const,
+            visited: ["code" as const],
+            navigationPreset: "code" as const,
+            navigationEpoch: current.navigationEpoch + 1,
           }
         : {}),
     });
@@ -178,9 +181,20 @@ useWorkspace.subscribe((state, previous) => {
 let timer: ReturnType<typeof setTimeout> | undefined;
 let started = false;
 let savedData: Workspace | undefined;
-export async function hydrateWorkspace() {
+export type HydrateEntry = { view: View; preset?: PresetId };
+
+export async function hydrateWorkspace(entry?: HydrateEntry) {
   if (started) return;
   started = true;
+  const entryState = entry
+    ? {
+        view: entry.view,
+        page: entry.view,
+        visited: entry.view === "desk" ? [] : [entry.view as Tool],
+        navigationEpoch: useWorkspace.getState().navigationEpoch + 1,
+        navigationPreset: entry.preset ?? null,
+      }
+    : {};
   try {
     if (typeof window !== "undefined") {
       useWorkspace.setState({
@@ -195,12 +209,14 @@ export async function hydrateWorkspace() {
     const data = await loadWorkspace();
     useWorkspace.setState({
       ...(data ? { data } : {}),
+      ...entryState,
       hydrated: true,
       saveStatus: "saved",
     });
     savedData = useWorkspace.getState().data;
   } catch {
     useWorkspace.setState({
+      ...entryState,
       hydrated: true,
       recoveryNeeded: true,
       saveStatus: "error",
