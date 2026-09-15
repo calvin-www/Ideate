@@ -21,7 +21,7 @@ Ideate is a 3D study desk for understanding algorithms through drawing, Python e
 ## Working agreement
 
 - Preserve the feeling of explaining an idea on paper and passing the pencil between a student and an AI study partner.
-- Use a 3D desk to open readable, full-size 2D tools.
+- Open straight into a layout preset; the 3D desk is an optional view.
 - Start with one whiteboard, one Python file, one Markdown notebook, and one shared conversation.
 - The computer needs Run/Stop, basic Python output, and errors. A terminal, REPL, shell, and package manager are outside the agreed scope.
 - Use Gemini for product AI. Astra can assist with development and static assets.

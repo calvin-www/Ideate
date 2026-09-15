@@ -10,7 +10,7 @@ Use Node 22.12+ or a current supported Node release, and Chrome for browser test
 npm ci
 ```
 
-Copy `.env.example` to `.env.local` and set `GEMINI_API_KEY`. Keep it server-side; do not add a `NEXT_PUBLIC_` prefix. The current development workspace already has a local key configured.
+Copy `.env.example` to `.env.local`. No API keys go on the server. Open the app, click **Settings** in the header, and paste your own Gemini API key. It is stored in your browser and sent only to this site's own API, which forwards it to Google.
 
 AI output tokens are not capped by the app; the model's own output limit is the only ceiling. Cutoffs and invalid tool calls can recover automatically up to twice per request, and each request allows up to eight tool rounds; **Continue** grants fresh attempts when the response pauses. Completed edits and partial text are preserved.
 
@@ -20,7 +20,7 @@ npm run dev
 
 Open **http://localhost:3000**. The same command starts the separate Python runner at `http://localhost:3001`. Both listen on loopback. Use the same app hostname consistently because browser saves belong to that origin.
 
-For voice, also set `ELEVENLABS_API_KEY` and `ELEVENLABS_VOICE_ID` in `.env.local`, then restart the server. Click the header microphone button and allow microphone access. Gemini remains the study partner; ElevenLabs handles live transcription and speech. The partner speaks while whiteboard strokes or editor lines appear. The adjacent chat button opens the study partner panel; speaking does not open it automatically.
+For voice, also add your ElevenLabs API key and voice ID in **Settings**. Without them the microphone is hidden and the partner works as text chat. Click the header microphone button and allow microphone access. Gemini remains the study partner; ElevenLabs handles live transcription and speech. The partner speaks while whiteboard strokes or editor lines appear. The adjacent chat button opens the study partner panel; speaking does not open it automatically.
 
 Voice follows the **Auto-apply changes** preference. With review enabled, say “apply it” or use **Apply** to start a proposed step. Speak to interrupt; the visible partial function or stroke stays where it paused, saved as an undoable change. Ask your question, then say “continue” to continue the unfinished task from that work. **Mute microphone** stops transcription while the current explanation can continue. **Stop** ends speech and drawing and turns off the microphone. Pan or zoom the board during an explanation to take camera control without interrupting it. This first version paces visuals by short spoken steps; exact word timing and microphone interruption sensitivity still need real-device tuning.
 
@@ -32,6 +32,10 @@ npm start
 ```
 
 The Python runtime ships with the npm dependency and runs in a separate-origin iframe and Web Worker. It supports standard-library study examples, printed output, errors, Run and Stop. **Debug** pauses before each Python line, highlights it, and shows local variables. **Step** enters your functions; **Continue** finishes the captured program. Debugging needs a browser with [WebAssembly JSPI support](https://blog.pyodide.org/posts/jspi/) and is tested in Chrome. It has no shell, package installer, or interactive input. Each run starts clean, with a ten-second execution budget and 64 KiB output limit. Time spent inspecting a responsive paused debugger does not consume the budget.
+
+## Deploying
+
+The Next.js app needs no secrets. Set `NEXT_PUBLIC_RUNNER_ORIGIN` to wherever the Python runner is reachable. Each visitor supplies their own Gemini (and optional ElevenLabs) key through Settings; keys never reach the server's storage or logs. Workspaces stay in each visitor's browser.
 
 ## Try the study loop
 
@@ -49,7 +53,7 @@ Chat and journal previews render LaTeX equations with `$...$`, display `$$` bloc
 
 Work is saved in IndexedDB in this browser. Export a JSON workspace for a portable backup. Python and Markdown also have individual downloads. No account or cloud sync is required.
 
-Use the logo's **Back to desk** link to choose a tool. Whiteboard, Computer, and Journal always open alone from the desk, preserving their content and editor state. Use **Addons** to add a tool beside, below, tabbed with, or floating over the focused pane. Drag tab headers to rearrange editors, floating title bars to move them, and dividers or window edges to resize them. Group controls let you dock, maximize, or hide an editor. **Restore arrangement** (or Escape while maximized) exits maximization. **Show only [tool]** hides other panes; **Restore previous arrangement** explicitly recovers the most recent arrangement, including after desk navigation or reload. There is one shared arrangement, stored separately from documents in this browser. Editor undo history and running Python survive layout changes. Computer opens with output embedded. Narrow windows temporarily show one editor without overwriting the desktop arrangement; selecting a desk object still opens only that tool. Separate browser popout windows are not included.
+The site opens in the last layout preset you used (**Code**, **Notes**, **Code + Notes**, or **Everything**; the header picker switches between them). The logo's **Desk** link opens the optional 3D desk, and `/?view=desk` links straight to it. Whiteboard, Computer, and Journal always open alone from the desk, preserving their content and editor state. Use **Addons** to add a tool beside, below, tabbed with, or floating over the focused pane. Drag tab headers to rearrange editors, floating title bars to move them, and dividers or window edges to resize them. Group controls let you dock, maximize, or hide an editor. **Restore arrangement** (or Escape while maximized) exits maximization. **Show only [tool]** hides other panes; **Restore previous arrangement** explicitly recovers the most recent arrangement, including after desk navigation or reload. There is one shared arrangement, stored separately from documents in this browser. Editor undo history and running Python survive layout changes. Computer opens with output embedded. Narrow windows temporarily show one editor without overwriting the desktop arrangement; selecting a desk object still opens only that tool. Separate browser popout windows are not included.
 
 Python's **Output** header also has a **Move output** control. Place output beside, above, or below the source, add it as a tab, or float it independently. Drag its tab to rearrange it with other workspace panels. **Return output to editor** restores the embedded output area. Output continues updating while detached, and its arrangement is included in saved layouts.
 
@@ -74,10 +78,10 @@ npm run test:e2e
 npm run check:gemini
 ```
 
-The Gemini check makes small live API requests and requires the local key. Other tests use fixtures for AI and actual Pyodide/Excalidraw where relevant. Browser tests use installed Chrome; runner tests can use installed Chromium instead. The production build and browser checks are separate from the live model availability check.
+The Gemini check makes small live API requests and reads `GEMINI_API_KEY` from `.env.local` for that script only. Other tests use fixtures for AI and actual Pyodide/Excalidraw where relevant. Browser tests use installed Chrome; runner tests can use installed Chromium instead. The production build and browser checks are separate from the live model availability check.
 
 [Documentation](docs/README.md) covers product decisions, architecture, interaction design, and the original hackathon plan. [Implementation status](docs/implementation-status.md) records validation and remaining limits.
 
 Automated coverage includes local persistence, review and auto-apply, editor layouts, Python execution, microphone controls, board navigation during AI drawing, and text highlighting.
 
-This is a fresh implementation; the earlier Ideate repository was used as design reference. Nothing has been deployed.
+This is a fresh implementation; the earlier Ideate repository was used as design reference. The app is prepared for public deployment with visitor-supplied keys.

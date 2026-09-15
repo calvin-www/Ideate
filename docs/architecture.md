@@ -57,7 +57,7 @@ The scene renders on demand, and camera transitions and changed preview textures
 
 The browser owns authoritative artifact state. Manual editing and local saving do not call Gemini. Sending a study-partner request transmits bounded board, code, notes, run, source-reference, and conversation context to the application's `/api/ai` endpoint and then to Gemini. A board screenshot may also be included. Local persistence therefore does not mean an AI request stays on the device.
 
-The server owns `GEMINI_API_KEY` and the configurable `GEMINI_MODEL`; the default is `gemini-3.8-flash`. The key is neither a public environment variable nor part of workspace exports. The server does not keep an independent mutable workspace or execute the model's tools.
+Each visitor supplies a Gemini key in Settings; the browser stores it and sends it as the `X-Gemini-Key` header to `/api/ai`, which forwards it to Google without logging or storing it. The server owns only `GEMINI_MODEL` (default `gemini-3.8-flash`). Keys are not part of workspace exports. The server does not keep an independent mutable workspace or execute the model's tools.
 
 The client validates requested operations, executes permitted reads, previews writes, and returns actual results to the model. Accepting a change must pass the revision checks in [AI collaboration](ai-collaboration.md).
 

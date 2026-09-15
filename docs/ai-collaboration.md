@@ -8,7 +8,7 @@ Keep one conversation across Board, Code, Notes, and the desk. The active tool g
 
 ## Runtime model
 
-The delivered collaborator uses Gemini through the server-side `@google/genai` SDK. The configured/default model is `gemini-3.8-flash`; `GEMINI_MODEL` can change it without a product model picker. `GEMINI_API_KEY` remains on the application server.
+The delivered collaborator uses Gemini through the server-side `@google/genai` SDK. The configured/default model is `gemini-3.8-flash`; `GEMINI_MODEL` can change it without a product model picker. Each visitor supplies their own Gemini key through Settings; the server holds none.
 
 On September 12, 2026, the account preflight demonstrated streamed text, recognition of a blue square and orange circle, and a `read_code` function call followed by a response citing the supplied revision while preserving its opaque thought signature. Browser QA also received a live explanation. Subsequent requests intermittently returned provider HTTP 503, surfaced safely as a failed AI request; a live notes-proposal attempt also failed. Access and these examples are verified, but dependable capacity and the full binary-search teaching evaluation are not established.
 
