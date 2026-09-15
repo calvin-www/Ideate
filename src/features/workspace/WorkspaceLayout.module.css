@@ -234,4 +234,10 @@
     padding: 6px;
     font-size: 10px;
   }
+  .presetPicker {
+    width: 60px;
+    padding: 5px 2px 5px 6px;
+    font-size: 10px;
+    text-overflow: ellipsis;
+  }
 }
