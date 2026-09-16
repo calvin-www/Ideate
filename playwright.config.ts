@@ -11,6 +11,27 @@ export default defineConfig({
     screenshot: "only-on-failure",
     video: "retain-on-failure",
     channel: "chrome",
+    // Specs that exercise chat or voice assume keys are already provided;
+    // tests/e2e/provider-keys.spec.ts opts out to cover the empty state.
+    storageState: {
+      cookies: [],
+      origins: [
+        {
+          origin: "http://localhost:3000",
+          localStorage: [
+            {
+              name: "ideate:provider-keys:v1",
+              value: JSON.stringify({
+                version: 1,
+                gemini: "e2e-gemini",
+                elevenLabsKey: "e2e-eleven",
+                elevenLabsVoiceId: "e2e-voice",
+              }),
+            },
+          ],
+        },
+      ],
+    },
   },
   webServer: {
     command: "npm run dev",

@@ -107,19 +107,13 @@ export type Selection = {
   runId?: string;
 };
 
-export const SAMPLE_CODE = `# Change the target, run, and follow the search.\ndef binary_search(values, target):\n    low, high = 0, len(values) - 1\n    while low <= high:\n        mid = (low + high) // 2\n        print(f"low={low}  high={high}  mid={mid}  value={values[mid]}")\n        if values[mid] == target:\n            return mid\n        if values[mid] < target:\n            low = mid + 1\n        else:\n            high = mid - 1\n    return -1\n\nvalues = [2, 5, 8, 12, 16, 23, 38, 56]\ntarget = 16\nresult = binary_search(values, target)\nprint(f"Found at index {result}" if result != -1 else "Not found")\n`;
-
 export function createWorkspace(): Workspace {
   return {
     schemaVersion: 1,
     id: crypto.randomUUID(),
-    title: "My study desk",
-    code: { id: "code", revision: 0, text: SAMPLE_CODE },
-    notes: {
-      id: "notes",
-      revision: 0,
-      text: "# Binary search\n\n## What I want to understand\n\nWhy is it safe to discard half the array?\n\n## Observations\n\nWrite down a prediction, then try it in Python.\n",
-    },
+    title: "My workspace",
+    code: { id: "code", revision: 0, text: "" },
+    notes: { id: "notes", revision: 0, text: "" },
     board: { id: "board", revision: 0, elements: [], files: {} },
     spreadsheet: { id: "spreadsheet", revision: 0, text: "" },
     runs: [],

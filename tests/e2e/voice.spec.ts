@@ -278,7 +278,7 @@ test("Stop during connection releases capture and ignores a late token", async (
 });
 
 test("voice setup errors leave typed collaboration available", async ({ page }) => {
-  await page.route("**/api/voice/session", (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Add ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID to .env.local." }) }));
+  await page.route("**/api/voice/session", (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: "Add your ElevenLabs API key and voice ID in Settings to use voice." }) }));
   await page.goto("/");
   await page.getByRole("button", { name: "Turn on microphone", exact: true }).click();
   await expect(page.getByRole("region", { name: "Voice controls" }).getByRole("alert")).toBeVisible();

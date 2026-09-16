@@ -57,20 +57,23 @@ test("Escape stays in the editor and simple desk preference survives reload", as
   await page.goto("/");
   await goToTool(page, "Computer");
   await expect(page.getByRole("navigation", { name: "Workspace tools" })).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "Ideate, back to desk" })).toContainText("Back to desk");
+  await expect(page.getByRole("link", { name: "Ideate, desk" })).toContainText("Desk");
   await python(page).getByRole("textbox").press("Escape");
   await expect(python(page)).toBeVisible();
   await page.reload();
+  await goToTool(page, "Desk");
   await expect(page.getByRole("button", { name: "Show 3D desk", exact: true })).toBeVisible();
 });
 
 test("3D desk objects reopen alone and receive keyboard focus on return", async ({ page }) => {
   await page.goto("/");
+  await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Ideate, desk" }).click();
   const computer = page.getByRole("button", { name: "Open Computer", exact: true });
   await computer.click();
   await expect(python(page)).toBeVisible();
   await dragTool(page, "Journal", "right");
-  await page.getByRole("link", { name: "Ideate, back to desk" }).click();
+  await page.getByRole("link", { name: "Ideate, desk" }).click();
   const journalObject = page.getByRole("button", { name: "Open Journal", exact: true });
   await expect(journalObject).toBeFocused();
   await computer.click();

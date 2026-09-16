@@ -19,6 +19,7 @@ import {
   type EditorPanel,
 } from "./layoutPersistence";
 import { beginToolDrag, draggedTool, endToolDrag, isToolDrag } from "./toolDrag";
+import { presetIds, presets, type PresetId } from "./presets";
 import styles from "./WorkspaceLayout.module.css";
 
 const icons: Record<EditorPanel, typeof Code> = {
@@ -44,6 +45,8 @@ export type ToolDockProps = {
   restoreSaved: () => void;
   reset: () => void;
   restore: () => void;
+  preset: PresetId;
+  applyPreset: (id: PresetId) => void;
 };
 
 function chipHint(props: ToolDockProps, tool: EditorPanel) {
@@ -121,6 +124,19 @@ export default function ToolDock(props: ToolDockProps) {
         props.float(tool);
       }}
     >
+      <select
+        className={styles.presetPicker}
+        aria-label="Layout preset"
+        title="Layout preset"
+        value={props.preset}
+        onChange={(event) => props.applyPreset(event.target.value as PresetId)}
+      >
+        {presetIds.map((presetId) => (
+          <option key={presetId} value={presetId}>
+            {presets[presetId].label}
+          </option>
+        ))}
+      </select>
       {!props.narrow && chips.map(chip)}
       {props.maximized && (
         <button type="button" className={styles.restore} onClick={props.restore}>

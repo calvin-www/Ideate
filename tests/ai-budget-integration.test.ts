@@ -24,7 +24,6 @@ afterEach(() => {
 
 describe("AI budget integration", () => {
   it("does not cap Gemini output tokens through the actual SDK", async () => {
-    vi.stubEnv("GEMINI_API_KEY", "fixture-key");
     let payload: { generationConfig: { maxOutputTokens?: number } } | undefined;
     vi.stubGlobal("fetch", async (_url: unknown, init: RequestInit) => {
       payload = JSON.parse(String(init.body));
@@ -36,6 +35,8 @@ describe("AI budget integration", () => {
     const stream = await generateStream(
       [{ role: "user", parts: [{ text: "Hello" }] }],
       new AbortController().signal,
+      undefined,
+      "fixture-key",
     );
     for await (const _chunk of stream) {
       /* consume the real SDK's parser */

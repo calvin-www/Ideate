@@ -190,6 +190,11 @@ for (const origin of ["Computer", "Journal", "Desk", "Narrow"]) {
       },
     ]);
     await open(page, "Computer");
+    const editor = page
+      .getByRole("region", { name: "Python workspace", exact: true })
+      .getByRole("textbox");
+    await editor.click();
+    await page.keyboard.insertText("values = [2, 5, 8, 12, 16]\n");
     await page
       .getByRole("button", { name: "Move output", exact: true })
       .click();
@@ -197,9 +202,6 @@ for (const origin of ["Computer", "Journal", "Desk", "Narrow"]) {
       .getByRole("dialog", { name: "Output position" })
       .getByRole("button", { name: "Tab with editor", exact: true })
       .click();
-    const editor = page
-      .getByRole("region", { name: "Python workspace", exact: true })
-      .getByRole("textbox");
     await expect(editor).toBeHidden();
     if (origin === "Narrow") await page.setViewportSize({ width: 600, height: 850 });
     if (origin !== "Computer" && origin !== "Narrow") await navigate(page, origin);
@@ -253,6 +255,9 @@ test("Python highlights preserve selections and source, follow scroll, and clear
     .getByRole("region", { name: "Python workspace", exact: true })
     .getByRole("textbox");
   await editor.click();
+  await page.keyboard.insertText(
+    "def find(values, target):\n    low, high = 0, len(values) - 1\n    while low <= high:\n        mid = (low + high) // 2\n        if values[mid] == target:\n            return mid\n        if values[mid] < target:\n            low = mid + 1\n        else:\n            high = mid - 1\n    return -1\n",
+  );
   await editor.press("ControlOrMeta+End");
   await page.keyboard.insertText("\n" + "# More practice\n".repeat(40));
   await editor.press("ControlOrMeta+Home");

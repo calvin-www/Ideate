@@ -14,6 +14,7 @@ import { loadWorkspace, saveWorkspace } from "./persistence";
 import { checkAttention, type AttentionState } from "../ai/attention";
 import { clearWorkspaceData, type ClearScope } from "./clearWorkspace";
 import type { BoardFiles } from "../board/images";
+import type { PresetId } from "./presets";
 
 type Store = {
   data: Workspace;
@@ -25,6 +26,7 @@ type Store = {
   visibleTools: Tool[];
   navigationEpoch: number;
   navigationReveal: Tool | null;
+  navigationPreset: PresetId | null;
   focusTool: (tool: Tool) => void;
   chatOpen: boolean;
   autoApplyChanges: boolean;
@@ -41,7 +43,7 @@ type Store = {
   clearData: (scope: ClearScope) => void;
   editorEpochs: Record<Tool, number>;
   setData: (update: (data: Workspace) => Workspace) => void;
-  navigate: (view: View, options?: { reveal?: boolean }) => void;
+  navigate: (view: View, options?: { reveal?: boolean; preset?: PresetId }) => void;
   setText: (target: "code" | "notes" | "spreadsheet", text: string) => void;
   setBoard: (elements: BoardElement[], files?: BoardFiles) => void;
 };
@@ -55,6 +57,7 @@ export const useWorkspace = create<Store>((set, get) => ({
   visibleTools: [],
   navigationEpoch: 0,
   navigationReveal: null,
+  navigationPreset: null,
   focusTool: (tool) => {
     if (get().view !== tool) set({ view: tool, selection: null });
   },
@@ -97,8 +100,11 @@ export const useWorkspace = create<Store>((set, get) => ({
             recoveryNeeded: false,
             saveError: "",
             notice: "",
-            view: "desk" as const,
-            page: "desk" as const,
+            view: "code" as const,
+            page: "code" as const,
+            visited: ["code" as const],
+            navigationPreset: "code" as const,
+            navigationEpoch: current.navigationEpoch + 1,
           }
         : {}),
     });
@@ -118,6 +124,7 @@ export const useWorkspace = create<Store>((set, get) => ({
       page: view,
       navigationEpoch: get().navigationEpoch + 1,
       navigationReveal: options?.reveal && view !== "desk" ? view : null,
+      navigationPreset: options?.preset ?? null,
       selection: options?.reveal && get().view === view ? get().selection : null,
       visited:
         view === "desk"
@@ -174,9 +181,20 @@ useWorkspace.subscribe((state, previous) => {
 let timer: ReturnType<typeof setTimeout> | undefined;
 let started = false;
 let savedData: Workspace | undefined;
-export async function hydrateWorkspace() {
+export type HydrateEntry = { view: View; preset?: PresetId };
+
+export async function hydrateWorkspace(entry?: HydrateEntry) {
   if (started) return;
   started = true;
+  const entryState = entry
+    ? {
+        view: entry.view,
+        page: entry.view,
+        visited: entry.view === "desk" ? [] : [entry.view as Tool],
+        navigationEpoch: useWorkspace.getState().navigationEpoch + 1,
+        navigationPreset: entry.preset ?? null,
+      }
+    : {};
   try {
     if (typeof window !== "undefined") {
       useWorkspace.setState({
@@ -191,12 +209,14 @@ export async function hydrateWorkspace() {
     const data = await loadWorkspace();
     useWorkspace.setState({
       ...(data ? { data } : {}),
+      ...entryState,
       hydrated: true,
       saveStatus: "saved",
     });
     savedData = useWorkspace.getState().data;
   } catch {
     useWorkspace.setState({
+      ...entryState,
       hydrated: true,
       recoveryNeeded: true,
       saveStatus: "error",

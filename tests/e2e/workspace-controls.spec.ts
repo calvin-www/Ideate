@@ -25,7 +25,7 @@ test("header controls leave the full tool area available and chat opens only by 
   const editorBox = (await page.getByRole("region", { name: "Python workspace", exact: true }).boundingBox())!;
   expect(editorBox.y - headerBox.y - headerBox.height).toBeLessThan(3);
   expect(editorBox.y + editorBox.height).toBeGreaterThan(995);
-  await expect(header.getByRole("link", { name: "Ideate, back to desk", exact: true })).toBeVisible();
+  await expect(header.getByRole("link", { name: "Ideate, desk", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Explain visually", exact: true })).toHaveCount(0);
   const composer = page.getByRole("textbox", { name: "Ask your study partner", exact: true });
   await expect(composer).toBeHidden();
@@ -39,7 +39,7 @@ test("header controls leave the full tool area available and chat opens only by 
 
 test("saving and storage errors keep desk navigation and dock geometry stable", async ({ page }) => {
   await openComputer(page);
-  const navigation = page.getByRole("link", { name: "Ideate, back to desk", exact: true });
+  const navigation = page.getByRole("link", { name: "Ideate, desk", exact: true });
   const dock = page.getByRole("region", { name: "Python workspace", exact: true });
   const navBefore = await navigation.boundingBox();
   const dockBefore = await dock.boundingBox();

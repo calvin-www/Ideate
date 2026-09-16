@@ -9,11 +9,13 @@ import {
   MessageCircle,
   Monitor,
   PenTool,
+  Settings,
   Table2,
   Upload,
   X,
 } from "lucide-react";
 import { useWorkspace, hydrateWorkspace, flushSave } from "./store";
+import { presets, readPresetId } from "./presets";
 import { type ArtifactRef, type Tool, type View } from "./model";
 import { downloadFile, readSavedWorkspace } from "./persistence";
 import { adapters } from "./adapters";
@@ -27,6 +29,8 @@ import CodePanel from "../code/CodePanel";
 import NotePanel from "../notes/NotePanel";
 import SpreadsheetPanel from "../spreadsheet/SpreadsheetPanel";
 import WorkspaceDataControls from "./WorkspaceDataControls";
+import SettingsDialog from "../settings/SettingsDialog";
+import { useProviderKeys } from "../settings/providerKeys";
 
 const WorkspaceLayout = dynamic(() => import("./WorkspaceLayout"), { ssr: false });
 
@@ -80,7 +84,12 @@ export default function WorkspaceShell() {
   const sourceDialog = useRef<HTMLElement>(null);
   const sourceOpener = useRef<HTMLElement | null>(null);
   useEffect(() => {
-    void hydrateWorkspace();
+    useProviderKeys.getState().hydrate();
+    const wantsDesk = new URLSearchParams(window.location.search).get("view") === "desk";
+    const presetId = readPresetId();
+    void hydrateWorkspace(
+      wantsDesk ? { view: "desk" } : { view: presets[presetId].start, preset: presetId },
+    );
     try {
       setFlat(localStorage.getItem("ideate:desk-view") === "simple");
     } catch {
@@ -236,8 +245,8 @@ export default function WorkspaceShell() {
             e.preventDefault();
             open("desk");
           }}
-          aria-label="Ideate, back to desk"
-          title={view === "desk" ? "Ideate" : "Back to desk"}
+          aria-label="Ideate, desk"
+          title={view === "desk" ? "Ideate" : "Desk"}
         >
           <svg
             width="30"
@@ -258,7 +267,7 @@ export default function WorkspaceShell() {
             <span>
             ideate<span className="brand-dot">.</span>
             </span>
-            {view !== "desk" && <small className="brand-back">Back to desk</small>}
+            {view !== "desk" && <small className="brand-back">Desk</small>}
           </span>
         </a>
         <div className="header-actions">
@@ -299,6 +308,14 @@ export default function WorkspaceShell() {
           >
             <Upload size={17} />
           </button>
+          <button
+            className="icon-button"
+            title="Settings"
+            aria-label="Settings"
+            onClick={() => useProviderKeys.getState().openSettings()}
+          >
+            <Settings size={17} />
+          </button>
           <VoiceControls voice={voice} disabled={!hydrated}>
             <button
               className={`icon-button partner-toggle ${chatOpen ? "selected" : ""}`}
@@ -327,6 +344,7 @@ export default function WorkspaceShell() {
           />
         </div>
       </header>
+      <SettingsDialog />
       <input
         ref={importInput}
         type="file"

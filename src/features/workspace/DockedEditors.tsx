@@ -111,7 +111,7 @@ type Props = {
   initialLayout: SerializedDockview | null;
   initialTool: Tool;
   initialFocus: Tool | null;
-  start?: OpenEditor;
+  opens?: OpenEditor[];
   onChange: (state: DockState) => void;
   onController: (controller: EditorDock | null) => void;
   onDrop: (
@@ -177,7 +177,7 @@ export default function DockedEditors(props: Props) {
           instance.initialize(
             current.current.initialLayout,
             current.current.initialTool,
-            current.current.start,
+            current.current.opens,
           );
           if (current.current.initialFocus)
             instance.focus(current.current.initialFocus);

@@ -16,6 +16,7 @@ import { mathRemarkPlugins, mathRehypePlugins } from "../markdown/math";
 import { diffLines } from "diff";
 import { parseSheet, evaluateSheet, formatCell } from "../spreadsheet/sheet";
 import { useWorkspace } from "../workspace/store";
+import { useProviderKeys } from "../settings/providerKeys";
 import {
   undoChange,
   restoreChange,
@@ -122,6 +123,11 @@ export default function ChatPanel({ collaborator, onReference }: Props) {
     autoApplyChanges,
     setAutoApplyChanges,
   } = useWorkspace();
+  // Assume a key until the store has read storage. Otherwise a visitor who has
+  // one sees the setup card flash on every load, and hears it announced.
+  const geminiReady = useProviderKeys(
+    (s) => !s.hydrated || Boolean(s.keys.gemini),
+  );
   const [confirmClear, setConfirmClear] = useState(false);
   const [prompt, setPrompt] = useState("");
   const [undoError, setUndoError] = useState("");
@@ -270,11 +276,18 @@ export default function ChatPanel({ collaborator, onReference }: Props) {
             </p>
             <div className="starter-questions">
               {[
-                "Help me understand binary search",
+                "Help me plan what to build",
                 "Give me a hint about my diagram",
                 "Explain the last Python result",
               ].map((text) => (
-                <button key={text} onClick={() => void collaborator.ask(text)}>
+                <button
+                  key={text}
+                  onClick={() =>
+                    geminiReady
+                      ? void collaborator.ask(text)
+                      : useProviderKeys.getState().openSettings()
+                  }
+                >
                   {text}
                   <ArrowUp size={14} />
                 </button>
@@ -490,67 +503,84 @@ export default function ChatPanel({ collaborator, onReference }: Props) {
           </button>
         </div>
       )}
-      <form
-        className="chat-composer"
-        onSubmit={(e) => {
-          e.preventDefault();
-          send();
-        }}
-      >
-        {selection && (
-          <div className="context-chip">
-            <span>
-              {selection.runId ? "Python output" : toolNames[selection.tool]} ·{" "}
-              {selection.ids ? `${selection.ids.length} ${selection.tool === "spreadsheet" ? "cells" : "elements"}` : "selection"}
-            </span>
-            <button
-              type="button"
-              aria-label="Remove selection context"
-              onClick={() => useWorkspace.setState({ selection: null })}
-            >
-              <X size={12} />
-            </button>
-          </div>
-        )}
-        <textarea
-          aria-label="Ask your study partner"
-          value={prompt}
-          placeholder="Ask a question, or share your thinking…"
-          rows={3}
-          onChange={(e) => setPrompt(e.target.value)}
-          onKeyDown={(e) => {
-            if (
-              e.key === "Enter" &&
-              !e.shiftKey &&
-              !e.nativeEvent.isComposing
-            ) {
-              e.preventDefault();
-              send();
-            }
-          }}
-        />
-        <div className="composer-bottom">
-          <span>Gemini · your workspace in context</span>
-          {jobId ? (
-            <button
-              type="button"
-              className="send-button"
-              aria-label="Stop AI request"
-              onClick={collaborator.cancel}
-            >
-              <Square size={15} />
-            </button>
-          ) : (
-            <button
-              className="send-button"
-              aria-label="Send message"
-              disabled={!prompt.trim()}
-            >
-              <ArrowUp size={18} />
-            </button>
-          )}
+      {!geminiReady ? (
+        <div
+          className="chat-composer chat-setup"
+          data-testid="chat-setup"
+          role="status"
+        >
+          <p>Add your own Gemini API key to chat. It stays in this browser.</p>
+          <button
+            type="button"
+            className="button primary"
+            onClick={() => useProviderKeys.getState().openSettings()}
+          >
+            Open settings
+          </button>
         </div>
-      </form>
+      ) : (
+        <form
+          className="chat-composer"
+          onSubmit={(e) => {
+            e.preventDefault();
+            send();
+          }}
+        >
+          {selection && (
+            <div className="context-chip">
+              <span>
+                {selection.runId ? "Python output" : toolNames[selection.tool]} ·{" "}
+                {selection.ids ? `${selection.ids.length} ${selection.tool === "spreadsheet" ? "cells" : "elements"}` : "selection"}
+              </span>
+              <button
+                type="button"
+                aria-label="Remove selection context"
+                onClick={() => useWorkspace.setState({ selection: null })}
+              >
+                <X size={12} />
+              </button>
+            </div>
+          )}
+          <textarea
+            aria-label="Ask your study partner"
+            value={prompt}
+            placeholder="Ask a question, or share your thinking…"
+            rows={3}
+            onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={(e) => {
+              if (
+                e.key === "Enter" &&
+                !e.shiftKey &&
+                !e.nativeEvent.isComposing
+              ) {
+                e.preventDefault();
+                send();
+              }
+            }}
+          />
+          <div className="composer-bottom">
+            <span>Gemini · your workspace in context</span>
+            {jobId ? (
+              <button
+                type="button"
+                className="send-button"
+                aria-label="Stop AI request"
+                onClick={collaborator.cancel}
+              >
+                <Square size={15} />
+              </button>
+            ) : (
+              <button
+                className="send-button"
+                aria-label="Send message"
+                disabled={!prompt.trim()}
+              >
+                <ArrowUp size={18} />
+              </button>
+            )}
+          </div>
+        </form>
+      )}
     </aside>
   );
 }

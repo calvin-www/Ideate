@@ -81,17 +81,19 @@ async function exportedWorkspace(page: Page): Promise<Workspace> {
   return JSON.parse(await readFile(path!, "utf8")) as Workspace;
 }
 
-test("binary search executes its real found and missing-target paths", async ({
+test("a typed program executes and reruns after an edit", async ({
   page,
 }) => {
   await openWorkspace(page);
   await navigate(page, "Computer");
+  await editDocument(
+    page,
+    "code",
+    'values = [2, 5, 8, 12, 16]\ntarget = 16\nprint(f"Found at index {values.index(target)}" if target in values else "Not found")\n',
+  );
   await runPython(page);
   const output = pythonPanel(page).getByLabel("Python output", { exact: true });
   await expect(output).toContainText("Found at index 4", { timeout: 30_000 });
-  await expect(output).toContainText("low=0  high=7  mid=3  value=12");
-  await expect(output).toContainText("low=4  high=7  mid=5  value=23");
-  await expect(output).toContainText("low=4  high=4  mid=4  value=16");
 
   const original = await exportedWorkspace(page);
   expect(original.runs.at(-1)?.status).toBe("success");

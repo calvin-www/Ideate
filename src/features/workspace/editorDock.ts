@@ -81,7 +81,7 @@ export class EditorDock {
   initialize(
     layout: SerializedDockview | null,
     tool: EditorPanel,
-    start?: OpenEditor,
+    opens: OpenEditor[] = [],
   ) {
     this.transaction(() => {
       let restored = false;
@@ -94,8 +94,11 @@ export class EditorDock {
         }
       }
       if (!this.api.panels.length) this.add(tool);
-      if (start) this.open(start);
-      else if (!restored) this.focus(tool);
+      for (const open of opens) this.open(open);
+      // Each open() already activates its own panel (matches the pre-preset
+      // single-`start` behavior); only fall back to focusing `tool` when
+      // nothing was opened and no saved layout restored a panel either.
+      if (!opens.length && !restored) this.focus(tool);
     });
   }
   capture(): SerializedDockview {

@@ -15,6 +15,7 @@ import {
   createRateLimiter,
   mapAiError,
   readAiRequest,
+  readProviderKey,
   validateOrigin,
 } from "./validation";
 
@@ -90,6 +91,7 @@ export async function handleAiRequest(
   let iterator: AsyncIterator<GenerateContentResponse> | undefined;
   try {
     validateOrigin(request);
+    const apiKey = readProviderKey(request, "X-Gemini-Key");
     if (!(dependencies.limiter ?? localLimiter).take())
       throw new AiRequestError(
         429,
@@ -129,6 +131,7 @@ export async function handleAiRequest(
         contents,
         signal,
         recovery,
+        apiKey,
       );
       iterator = provider[Symbol.asyncIterator]();
       return iterator.next();

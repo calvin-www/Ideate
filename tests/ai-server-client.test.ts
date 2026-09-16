@@ -146,6 +146,26 @@ describe("client AI review lifecycle", () => {
     expect(useWorkspace.getState().data.changes).toEqual([]);
   });
 
+  it("sends the stored Gemini key as a header on every AI request", async () => {
+    const { useProviderKeys } = await import("../src/features/settings/providerKeys");
+    useProviderKeys.setState({ keys: { gemini: "visitor-key", elevenLabsKey: "", elevenLabsVoiceId: "" } });
+    const provider = providerCall("read_code", {});
+    const headers: string[] = [];
+    const collaborator = createCollaborator({
+      request: async (input, init) => {
+        headers.push(new Headers(init?.headers).get("X-Gemini-Key") ?? "");
+        return provider.request(input, init);
+      },
+      runCode: async () => ({}) as Run,
+      onPending: () => {},
+      onError: () => {},
+    });
+    await collaborator.ask("Read my code");
+    expect(headers.length).toBeGreaterThan(0);
+    expect(headers.every((value) => value === "visitor-key")).toBe(true);
+    useProviderKeys.setState({ keys: { gemini: "", elevenLabsKey: "", elevenLabsVoiceId: "" } });
+  });
+
   it("ignores late streamed text after chat is cleared", async () => {
     let stream!: ReadableStreamDefaultController<Uint8Array>;
     const encoder = new TextEncoder();

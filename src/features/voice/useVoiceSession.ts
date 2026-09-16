@@ -5,6 +5,7 @@ import { useWorkspace } from "../workspace/store";
 import { closeAudio, connectMicrophone, speak, unlockAudio } from "./transport";
 import { checkpointPresentation, clearPresentation, presentChange, usePresentation } from "./presentation";
 import { estimateSpeechDuration, playStep } from "./playback";
+import { hasVoiceKeys, useProviderKeys } from "../settings/providerKeys";
 
 type Collaborator = {
   ask: (prompt: string) => Promise<void>;
@@ -111,6 +112,10 @@ export function useVoiceSession() {
 
   async function start() {
     if (session.current) return;
+    if (!hasVoiceKeys(useProviderKeys.getState().keys)) {
+      setError("Add your ElevenLabs API key and voice ID in Settings to use voice.");
+      return;
+    }
     setError(""); setStatus("connecting");
     const controller = new AbortController();
     session.current = controller;

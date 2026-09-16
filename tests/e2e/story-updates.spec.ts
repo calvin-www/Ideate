@@ -201,6 +201,8 @@ test("IDE debugger steps real values, marks edits stale, continues the captured 
 test("domain clearing is scoped and full clearing stops debugging, flips the table, and stays empty after reload", async ({
   page,
 }) => {
+  await navigate(page, "Computer");
+  await editCode(page, "print('seeded by test')");
   await navigate(page, "Whiteboard");
   await loadBoardExample(page);
   await expect
@@ -225,14 +227,19 @@ test("domain clearing is scoped and full clearing stops debugging, flips the tab
     .click();
   let data = await snapshot(page);
   expect(data.board.elements).toEqual([]);
-  expect(data.code.text).toContain("binary_search");
+  expect(data.code.text).toContain("seeded by test");
   await clear(page, "notes");
   data = await snapshot(page);
   expect(data.notes.text).toBe("");
-  expect(data.code.text).toContain("binary_search");
+  expect(data.code.text).toContain("seeded by test");
   await navigate(page, "Computer");
   await clear(page, "Python");
-  await expect(codePanel(page).locator(".cm-content")).toHaveText("");
+  // An empty document now shows the editor placeholder (added after this
+  // fixture was written), so the cleared editor's visible text is the
+  // placeholder copy rather than an empty string.
+  await expect(codePanel(page).locator(".cm-content")).toHaveText(
+    "# Write Python here, then press Ctrl+Enter to run",
+  );
   await codePanel(page).getByRole("textbox").press("ControlOrMeta+Z");
   expect((await snapshot(page)).code.text).toBe("");
   await editCode(page, "print('old program')");

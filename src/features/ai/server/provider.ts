@@ -17,18 +17,19 @@ export type GenerateStream = (
   contents: Content[],
   signal: AbortSignal,
   recovery?: boolean,
+  apiKey?: string,
 ) => Promise<AsyncIterable<GenerateContentResponse>>;
 
 export const generateStream: GenerateStream = async (
   contents,
   signal,
   recovery,
+  apiKey,
 ) => {
-  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey)
     throw new AiRequestError(
       503,
-      "Gemini is not configured. Add the server API key to enable collaboration.",
+      "Add your Gemini API key in Settings to chat.",
     );
   const client = new GoogleGenAI({ apiKey });
   return client.models.generateContentStream({

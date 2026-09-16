@@ -64,8 +64,6 @@ This verifies real explanation, notes editing, provenance, and tool continuation
 
 Follow the [root README](../README.md). `npm run dev` copies the runner into `public/runner/` and starts the app at `http://localhost:3000`; the Python runner is served from that same origin. `.env.local` holds the server-only Gemini key and is ignored by Git. `.env.example` contains placeholders only.
 
-A [prepared study workspace](examples/README.md) contains an actual recorded run and accepted source-linked notes. It is explicitly labeled as prepared. Import it for a fallback demonstration, then run Python again for fresh output. No prerecorded response is presented as live AI.
-
 ## Remaining limits
 
 - Gemini quota, latency, and availability govern the live AI experience. A full pedagogical evaluation and three consecutive live rehearsals remain presentation preparation work.
