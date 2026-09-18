@@ -80,8 +80,8 @@ npm run check:gemini
 
 The Gemini check makes small live API requests and reads `GEMINI_API_KEY` from `.env.local` for that script only. Other tests use fixtures for AI and actual Pyodide/Excalidraw where relevant. Browser tests use installed Chrome; runner tests can use installed Chromium instead and serve the built runner files with the same headers as the app. The production build and browser checks are separate from the live model availability check.
 
-[Documentation](docs/README.md) covers product decisions, architecture, interaction design, and the original hackathon plan. [Implementation status](docs/implementation-status.md) records validation and remaining limits.
+[Documentation](docs/README.md) covers product decisions, architecture, interaction design, and the original implementation plan. [Implementation status](docs/implementation-status.md) records validation and remaining limits.
 
 Automated coverage includes local persistence, review and auto-apply, editor layouts, Python execution, microphone controls, board navigation during AI drawing, and text highlighting.
 
-This is a fresh implementation; the earlier Ideate repository was used as design reference. The app deploys as a single Next.js project; `npm run build` bundles the Python runner. It is prepared for public deployment with visitor-supplied keys.
+The app deploys as a single Next.js project; `npm run build` bundles the Python runner. It is prepared for public deployment with visitor-supplied keys.

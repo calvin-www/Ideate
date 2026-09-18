@@ -58,15 +58,15 @@ Pinned dependency updates and overrides eliminated the advisories reported by th
 - A subsequent live request read the recorded Python run and proposed notes with clickable whiteboard/output links. After acceptance, the Python link opened the exact saved trace ending in `Found at index 4`.
 - Other live requests encountered upstream failures and rate limiting. Those failures were visible; accepted notes and existing documents remained intact. One provider 503 retry is allowed only before streaming begins. Rate limits are not retried automatically.
 
-This verifies real explanation, notes editing, provenance, and tool continuation. AI code/board edits also have deterministic contract and UI coverage; a consistently repeatable, multi-step live three-minute demo under provider load is not yet claimed.
+This verifies real explanation, notes editing, provenance, and tool continuation. AI code/board edits also have deterministic contract and UI coverage; a consistently repeatable, multi-step live walkthrough under provider load is not yet claimed.
 
-## Running and demonstrating
+## Running the app
 
 Follow the [root README](../README.md). `npm run dev` copies the runner into `public/runner/` and starts the app at `http://localhost:3000`; the Python runner is served from that same origin. `.env.local` holds the server-only Gemini key and is ignored by Git. `.env.example` contains placeholders only.
 
 ## Remaining limits
 
-- Gemini quota, latency, and availability govern the live AI experience. A full pedagogical evaluation and three consecutive live rehearsals remain presentation preparation work.
+- Gemini quota, latency, and availability govern the live AI experience. A full pedagogical evaluation has not been done.
 - The app deploys as one Next.js project (the Python runner is bundled by `npm run build`). Public deployment still needs request/account controls and a provider spending policy for the AI routes.
 - Source links into notes are implemented. A general relationship graph and board/code metadata links are not implemented.
 - Pending proposals and execution jobs do not resume after a browser reload. Saved work survives; unfinished messages/runs are marked interrupted.
@@ -74,4 +74,4 @@ Follow the [root README](../README.md). `npm run dev` copies the runner into `pu
 - The runner shares the app origin; its CSP, Worker, and empty-globals boundary is for study code, not hostile code. Browser memory is not governed by a hard per-run memory quota.
 - Multiplayer, voice, an animated companion, authentication, multiple projects, custom rooms, trace playback, and on-demand asset generation remain outside the MVP.
 
-The original [implementation plan](implementation-plan.md) retains the full acceptance and demo plan. Organizer clarification is still required before treating earlier work as reusable HackRice submission code; this implementation did not copy it.
+The original [implementation plan](implementation-plan.md) retains the full acceptance plan. No code from the earlier repository was copied into this one.
