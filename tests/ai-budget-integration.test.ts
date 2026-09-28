@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { GenerateContentResponse } from "@google/genai";
-import { generateStream } from "../src/features/ai/server/provider";
+import { buildContents, generateStream } from "../src/features/ai/server/provider";
 import { handleAiRequest } from "../src/features/ai/server/handler";
-import { createRateLimiter } from "../src/features/ai/server/validation";
+import { createRateLimiter, parseAiRequest } from "../src/features/ai/server/validation";
 import { createCollaborator } from "../src/features/ai/useCollaborator";
 import { createWorkspace } from "../src/features/workspace/model";
 import { useWorkspace } from "../src/features/workspace/store";
@@ -23,6 +23,27 @@ afterEach(() => {
 });
 
 describe("AI budget integration", () => {
+  it("accepts a continuation built from its own largest initial snapshot part", () => {
+    const initial = parseAiRequest({
+      messages: [{ role: "user", text: "Read my workspace" }],
+      context: {
+        notes: "a".repeat(136_000) + "🙂\"\\",
+        boardImage: "data:image/png;base64,AAAA",
+      },
+    });
+    const contents = buildContents(initial);
+    const call = { id: "read-1", name: "read_code", args: {} };
+    const continuation = {
+      contents: [...contents, { role: "model", parts: [{ functionCall: call, thoughtSignature: "opaque" }] }],
+    };
+    expect(() => parseAiRequest({
+      messages: initial.messages,
+      context: initial.context,
+      continuation,
+      toolResults: [{ id: "read-1", name: "read_code", result: { text: "ok" } }],
+    })).not.toThrow();
+  });
+
   it("does not cap Gemini output tokens through the actual SDK", async () => {
     let payload: { generationConfig: { maxOutputTokens?: number } } | undefined;
     vi.stubGlobal("fetch", async (_url: unknown, init: RequestInit) => {

@@ -6,6 +6,7 @@ export const MAX_REQUEST_BYTES = 6 * 1024 * 1024;
 const MAX_CONTEXT_BYTES = 192 * 1024;
 const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
 export const MAX_CONTINUATION_BYTES = 4 * 1024 * 1024;
+export const MAX_CONTINUATION_PART_CHARS = 128 * 1024;
 
 export class AiRequestError extends Error {
   constructor(
@@ -34,7 +35,7 @@ const imageSchema = z.strictObject({
 const partSchema = z.strictObject({
   text: z
     .string()
-    .max(128 * 1024)
+    .max(MAX_CONTINUATION_PART_CHARS)
     .optional(),
   thought: z.boolean().optional(),
   thoughtSignature: z
