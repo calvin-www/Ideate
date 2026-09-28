@@ -15,12 +15,12 @@ These decisions reflect the user's accepted direction and corrections through Se
 | D07 | Start with the Python standard library                              | User clarification; no special packages required                                                                     |
 | D08 | Use Gemini for runtime collaboration                                | User preference; accepted revised recommendation                                                                     |
 | D09 | Use gemini-3.8-flash                                                | Account, text, image, and signature-preserving tool continuation verified; transient provider failures also observed |
-| D10 | One lead implementer                                                | No fixed countdown; user subsequently authorized subagents                                                           |
+| D10 | One lead implementer                                                | No fixed deadline; bounded subagents authorized later                                                                |
 | D11 | Use local persistence and reviewed AI changes                       | Accepted safeguards and scope                                                                                        |
 | D12 | Use binary search as the first study demonstration                  | Accepted revised recommendation; does not limit the general workspace                                                |
 | D13 | Use Astra for development and static assets if useful               | Development role; on-demand 3D generation is not required                                                            |
-| D14 | Target Work & Productivity                                          | User's intended track; frame the value around connected study work                                                   |
-| D15 | Treat the old project as design reference and default to fresh code | Original instruction and event reuse rules                                                                           |
+| D14 | Position around connected study work                                | Positioning decision; do not claim measured learning gains                                                           |
+| D15 | Treat the old project as design reference and write fresh code      | Original instruction; no application code was copied                                                                 |
 | D16 | Write planning documents into docs/                                 | Completed before implementation                                                                                      |
 | D17 | Begin implementation                                                | Explicitly authorized after planning; local build and verification allowed                                           |
 | D18 | Use bounded subagents                                               | Explicit user instruction; scene, runner, Gemini, and review delegated                                               |
@@ -51,18 +51,6 @@ Source reads: [package.json](https://github.com/moyindavid16/ideate/blob/main/pa
 
 These are static inspection findings, not a comprehensive review or a claim that the old application currently works.
 
-## Organizer clarification
-
-HackRice 16's published FAQ, question 32, says project work must be started and completed during the event, disallows work from before the hacking start, and requires attribution for boilerplate/templates. The schedule lists September 13, 2026 at 9:00 a.m. Houston time as the hacking end. Check the event's latest announcements before submission. [HackRice website and FAQ](https://hackrice.com/)
-
-The default plan is a fresh implementation. Seek organizer clarification before relying on any exception for:
-
-- Continuing the earlier concept and name, including the appropriate disclosure of the reference project.
-- Reusing specific old adapters, prompts, artwork, or other assets and whether any qualify as permitted attributed templates.
-- Submission attribution and any applicable rules for AI-assisted development or generated assets.
-
-Permission from original contributors and organizer eligibility are separate matters. No organizers or contributors have been contacted in this task. Unresolved reuse questions do not require importing old code; the fresh-build path remains the default.
-
 ## Technical documentation checked
 
 Sources were checked during planning on September 12, 2026. The documentation supports the listed capabilities; the integration still needs implementation-time validation.
@@ -90,7 +78,6 @@ Sources were checked during planning on September 12, 2026. The documentation su
 - Select compatible pinned package/runtime versions; no dependencies were installed during planning.
 - Prove the runner's origin restrictions, termination, and error reporting in a browser.
 - Prove editor lifecycle, persistence ordering, source references, and stale-edit protection.
-- Evaluate graphics performance and keyboard/focus behavior on the demonstration device.
-- Clarify any intended prior-work reuse before taking that route.
+- Evaluate graphics performance and keyboard/focus behavior on the target device.
 
 The user has already settled the audience, Python scope, preferred AI provider, and solo-build assumption. There are no outstanding product questions needed merely to preserve this plan in documentation.

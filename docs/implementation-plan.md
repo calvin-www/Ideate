@@ -19,7 +19,7 @@ This is the accepted milestone-level plan. The build uses a fresh codebase, pinn
 - The computer provides Run/Stop, printed output, and errors. No terminal, REPL, shell, interactive input, or package manager.
 - Python standard library is sufficient. Start with the ten-second execution and 64 KiB output limits described in the architecture.
 - Gemini is the product provider; `gemini-3.8-flash` passed account, text, image, and function-call checks. Provider availability can still vary.
-- Use a fresh implementation. Treat old code, prompts, and assets as reference unless specific reuse is cleared.
+- Treat the earlier project's code, prompts, and assets as reference only; this codebase is written fresh.
 - Preserve manual edits, revision-bound references, local saves, and reviewable AI changes.
 - 3D objects must be functional, with full-size editors and a 2D navigation fallback.
 - Do not assume a fixed time budget. Reassess optional polish after each completed milestone.
@@ -122,19 +122,19 @@ These paths describe the planned responsibility map. The delivered code combines
 
 **Exit condition:** Every desk object opens the correct tool. Rapid switching, return navigation, keyboard activation, and scene failure preserve the study session.
 
-**Required checks:** Repeated hide/show of Excalidraw with correct pointer coordinates; keyboard-only navigation; no focus in hidden editors; reduced motion; narrow layout; WebGL failure; frame behavior on the demonstration laptop.
+**Required checks:** Repeated hide/show of Excalidraw with correct pointer coordinates; keyboard-only navigation; no focus in hidden editors; reduced motion; narrow layout; WebGL failure; frame behavior on the target laptop.
 
-## Milestone 5: reliability and demo preparation
+## Milestone 5: reliability
 
 **Dependencies:** Milestones 1-4.
 
 - [ ] Exercise the complete acceptance matrix below and resolve failures in the core workflow.
 - [ ] Complete required project checks and a production build after the application exists.
-- [ ] Prepare a workspace export, a previously generated example clearly labeled as such, and a recording of a successful live demonstration.
-- [ ] Rehearse three consecutive complete sessions, including one manual input change per session.
+- [ ] Keep a workspace export and a previously generated example, each clearly labeled as such, for use when the provider is unavailable.
+- [ ] Run three consecutive complete sessions, including one manual input change per session.
 - [ ] Add visual polish only if it leaves all core acceptance checks passing.
 
-**Exit condition:** The live study loop is repeatable, failures are recoverable, and the demo accurately distinguishes live operations from prepared fallbacks.
+**Exit condition:** The live study loop is repeatable, failures are recoverable, and prepared fallbacks are never presented as live operations.
 
 ## Acceptance matrix
 
@@ -151,22 +151,9 @@ These paths describe the planned responsibility map. The delivered code combines
 
 Use focused automated checks for revision/idempotency logic, persistence ordering, and runner messages, plus browser integration checks for navigation and editor behavior. Do not build a broad test framework that distracts from proving these boundaries.
 
-## Three-minute demonstration
-
-| Time      | Action                                                                                       |
-| --------- | -------------------------------------------------------------------------------------------- |
-| 0:00-0:20 | Introduce a student struggling to connect a binary-search diagram to its code; show the desk |
-| 0:20-0:50 | Open the board, select the array, and ask why one half can be discarded                      |
-| 0:50-1:25 | Ask for Python with trace prints; review and apply the change                                |
-| 1:25-1:55 | Run, manually change to a missing target, and run again                                      |
-| 1:55-2:30 | Use an output step for a board explanation and capture the learning insight in the journal   |
-| 2:30-3:00 | Open a source reference, return to the desk, and show that each tool retained its work       |
-
-Rehearsal determines whether the live demo can fit every AI step. If latency is too high, show the board explanation from the first run and keep the second run's note capture as the final live operation. Do not hide prerecorded output inside a live-looking run.
-
 ## Failure and scope controls
 
-**Slow or unavailable Gemini:** Show actual activity, allow continued manual work, and offer Stop/Retry. Retry captures current revisions. Use the explicitly labeled saved example or recorded session if required for the presentation.
+**Slow or unavailable Gemini:** Show actual activity, allow continued manual work, and offer Stop/Retry. Retry captures current revisions. Fall back to the explicitly labeled saved example when the provider is down.
 
 **Python failure:** Preserve source and captured output, distinguish program errors from runtime failures, and restart the Worker when needed. Offer a bounded AI repair using the actual traceback. Never invent successful output.
 

@@ -164,6 +164,6 @@ The following remain acceptance criteria to preserve as the implementation chang
 | Worker and browser                      | Print, raise an error, loop forever, stop, and run again while navigation remains responsive               |
 | Runner origin                           | Demonstrate that executed code cannot access application storage, credentials, or workspace operations     |
 | Model and client state                  | Apply a proposal only once; cancellation and delayed provider responses cannot produce a late edit         |
-| Scene and editors                       | Repeatedly switch views on the demonstration laptop with correct focus and pointer coordinates             |
+| Scene and editors                       | Repeatedly switch views on the target laptop with correct focus and pointer coordinates                    |
 
 See [decisions and sources](decisions-and-sources.md) for the documentation supporting these choices.

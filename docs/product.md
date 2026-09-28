@@ -14,7 +14,7 @@ The primary user is a CS student studying algorithms or preparing for coursework
 
 Moving between a drawing app, code editor, notes, and a separate chat makes the student repeatedly reconstruct context. Ideate keeps the visual explanation, implementation, observed output, and personal learning notes connected.
 
-For Work & Productivity, position the project around a coherent study workflow and less effort translating between representations. Do not claim measured learning improvements before evaluating the product.
+Position the project around a coherent study workflow and less effort translating between representations. Do not claim measured learning improvements before evaluating the product.
 
 ## Core study loop
 
