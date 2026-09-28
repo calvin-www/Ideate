@@ -228,12 +228,18 @@ export default function WorkspaceShell() {
         notice: "This source is not available in the saved workspace.",
       });
   }, []);
-  const exportWorkspace = () =>
-    downloadFile(
-      "ideate-workspace.json",
-      JSON.stringify(useWorkspace.getState().data, null, 2),
-      "application/json",
-    );
+  const exportWorkspace = async () => {
+    try {
+      const { serializeWorkspaceBackup } = await import("./backup");
+      downloadFile(
+        "ideate-workspace.json",
+        serializeWorkspaceBackup(useWorkspace.getState().data),
+        "application/json",
+      );
+    } catch (error) {
+      useWorkspace.setState({ notice: error instanceof Error ? error.message : "Could not export this workspace." });
+    }
+  };
   const open = (tool: View) => useWorkspace.getState().navigate(tool);
   return (
     <div className="app-shell">
@@ -355,14 +361,10 @@ export default function WorkspaceShell() {
           event.target.value = "";
           if (!file) return;
           try {
-            if (file.size > 15_000_000)
-              throw new Error("Workspace file exceeds 15 MB.");
-            const { prepareWorkspaceImport } = await import(
-              "./importWorkspace"
-            );
-            const imported = await prepareWorkspaceImport(
-              JSON.parse(await file.text()),
-            );
+            const { MAX_WORKSPACE_BYTES, parseWorkspaceBackup } = await import("./backup");
+            if (file.size > MAX_WORKSPACE_BYTES)
+              throw new Error("Workspace file exceeds the 32 MiB backup limit.");
+            const imported = await parseWorkspaceBackup(await file.text());
             if (
               !window.confirm(
                 "Replace this workspace with the imported copy? Export first if you want to keep your current work.",

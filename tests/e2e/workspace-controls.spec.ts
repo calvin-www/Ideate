@@ -10,6 +10,27 @@ async function openComputer(page: Page) {
   await expect(page.getByRole("region", { name: "Python workspace", exact: true })).toBeVisible();
 }
 
+test("an exported workspace can be imported after local edits", async ({ page }) => {
+  await openComputer(page);
+  const editor = page.getByRole("region", { name: "Python workspace", exact: true }).getByRole("textbox");
+  await editor.click();
+  await page.keyboard.insertText("print('backup')");
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: "Export workspace" }).click(),
+  ]);
+  const backupPath = await download.path();
+  expect(backupPath).not.toBeNull();
+
+  await editor.click();
+  await editor.press("ControlOrMeta+A");
+  await page.keyboard.insertText("print('changed')");
+  await expect(editor).toContainText("changed");
+  page.once("dialog", (dialog) => void dialog.accept());
+  await page.locator('input[type="file"]').setInputFiles(backupPath!);
+  await expect(editor).toContainText("backup");
+});
+
 test("header controls leave the full tool area available and chat opens only by its toggle", async ({ page }) => {
   await openComputer(page);
   const header = page.getByRole("banner");

@@ -1,5 +1,6 @@
 import { get, set } from "idb-keyval";
-import { validateImport, validateWorkspace, type Workspace } from "./model";
+import { validateImport, type Workspace } from "./model";
+import { fitWorkspace } from "./backup";
 
 export class SaveQueue<T> {
   private pending: Promise<unknown> = Promise.resolve();
@@ -22,7 +23,7 @@ export async function loadWorkspace(): Promise<Workspace | undefined> {
   return value === undefined ? undefined : validateImport(value);
 }
 export async function saveWorkspace(data: Workspace) {
-  return queue.save(validateWorkspace(structuredClone(data)));
+  return queue.save(fitWorkspace(structuredClone(data)));
 }
 export function downloadFile(
   filename: string,
