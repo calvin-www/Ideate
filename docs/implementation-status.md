@@ -1,6 +1,6 @@
 # Implementation status
 
-Updated September 13, 2026. The user explicitly authorized implementation after approving the product plan, then authorized subagents. This is a fresh implementation; the earlier repository remains a design reference. The app deploys as a single Next.js project with the Python runner bundled.
+Updated September 28, 2026. This page describes the delivered app; the test counts and live checks below are historical evidence from the September 13 implementation pass, not a current full-suite result. This is a fresh implementation; the earlier repository remains a design reference. The app deploys as a single Next.js project with the Python runner bundled.
 
 ## Delivered
 
@@ -8,8 +8,9 @@ Updated September 13, 2026. The user explicitly authorized implementation after 
 - **Whiteboard:** Excalidraw drawing, text, shapes, connectors, selection, native undo/redo, pan/zoom, Fit drawing, and a loadable binary-search diagram. PNG, JPEG, and WebP images support file drops, screenshot paste, and the image tool; binary data is saved locally, exported/imported, retained for undo, and included in board previews. Images are limited to 5 MB each and 10 MB of encoded data per board. Embedded websites and remote-image drags are unsupported. AI changes use validated element operations, real label measurements, and reciprocal arrow bindings.
 - **Computer:** One Python file with CodeMirror highlighting, line numbers, search, undo/redo, Run/Stop, resizable output, stale-result labels, traceback line navigation, and download. Debug pauses live execution before source lines, highlights the next line, and shows bounded local values. Step enters functions, Continue finishes the captured program, and Stop terminates a paused or busy worker. Source edits mark the debug snapshot stale. JSPI browser support is required for Debug; ordinary Run remains available without it. No terminal, REPL, package installer, or interactive input.
 - **Journal:** Markdown editing and rendered preview with tables, lists, code blocks, LaTeX math, download, and saved source links. Chat shares the math renderer. Dollar and LaTeX parenthesis/bracket delimiters preserve source positions; code spans stay literal. Raw HTML does not execute.
-- **Shared Gemini collaborator:** Immutable workspace/selection context, bounded reads, optional board image, streamed responses, text diffs, board previews, Apply/Reject, Apply & run, cancellation, revision checks, and undo. Conflicting undo shows the replaced content and requires an explicit restore; the restore is itself undoable.
-- **Persistence:** Browser-owned workspace in IndexedDB, serialized saves, schema checks before save/load, validated and normalized import, JSON export, and preserved historical run/source excerpts. Invalid saved data is retained for recovery instead of being overwritten by defaults.
+- **Shared Gemini collaborator:** AI SDK 7 with the Google provider on the server and UI stream transport in the browser. Zustand owns the saved conversation. Immutable workspace/selection context, bounded reads, optional board image, streamed responses, text diffs, board previews, Apply/Reject, Apply & run, cancellation, revision checks, and undo are delivered. Conflicting undo shows the replaced content and requires an explicit restore; the restore is itself undoable.
+- **Visitor-supplied keys and voice:** Visitors enter their Gemini key and optional ElevenLabs key and voice ID in Settings. Credentials are stored in the browser, sent to this app's API for the corresponding provider request, and excluded from workspace exports. With ElevenLabs settings present, the app offers microphone transcription and spoken teaching steps alongside board or editor visuals; text chat remains available without voice settings.
+- **Persistence:** Browser-owned workspace in IndexedDB, serialized one-record saves performed in a Worker, schema checks before save/load, validated and normalized import, JSON export, and preserved historical run/source excerpts. Invalid saved data is retained for recovery instead of being overwritten by defaults.
 - **Study controls:** Remembered auto-apply preference (on by default), using the same validation and undo path as reviewed changes. Clear chat cancels active work and deletes persisted messages. A global clear-data dialog provides separate board/code/notes clears and a full reset with a table-flip animation, confirmation, export access, keyboard handling, and reduced-motion support. Cleared domains discard their undo stacks; a full reset removes artifacts and history and restores the auto-apply default.
 - **Teaching instructions:** Answer-first explanations, short paragraphs, defined terms and symbols, concrete examples, respectful corrections, and detail matched to the student's question. These are prompt policies; model responses remain probabilistic.
 - **Isolated Python:** App-served runner iframe, restrictive CSP, message validation, a Worker per run, bundled Pyodide assets, ten-second execution and 64 KiB output limits, immediate initial trace output, and restart after completion/Stop/failure. No application secrets or workspace data enter the runner beyond the submitted code.
@@ -27,6 +28,8 @@ Updated September 13, 2026. The user explicitly authorized implementation after 
 | Shared text editor           | `src/features/workspace/TextEditor.tsx`                                   |
 | AI client / review UI        | `src/features/ai/useCollaborator.ts`, `ChatPanel.tsx`                     |
 | Gemini server                | `src/app/api/ai/route.ts`, `src/features/ai/server/`                      |
+| Voice input and output       | `src/features/voice/`, `src/app/api/voice/`                                |
+| Visitor credentials         | `src/features/settings/providerKeys.ts`                                   |
 | Runner and integration       | `runner/`, `src/features/execution/`                                      |
 
 ## Verification evidence
@@ -37,7 +40,7 @@ Story-update regressions cover reviewed and automatic edits, clearing during act
 
 Browser verification covers the real binary-search target-16 result (index 4), target-17 result (not found), Python errors and source lines, empty code, infinite-loop Stop/restart, Markdown rendering, and board/code/note persistence after reload. The 390 × 844 layout was inspected: object cards and Python editing/output fit without horizontal page overflow. Hidden editors remain mounted and inert.
 
-Final verification after review fixes and formatting:
+Historical verification from the September 13 implementation pass:
 
 | Check                     | Result                                                        |
 | ------------------------- | ------------------------------------------------------------- |
@@ -62,16 +65,16 @@ This verifies real explanation, notes editing, provenance, and tool continuation
 
 ## Running the app
 
-Follow the [root README](../README.md). `npm run dev` copies the runner into `public/runner/` and starts the app at `http://localhost:3000`; the Python runner is served from that same origin. `.env.local` holds the server-only Gemini key and is ignored by Git. `.env.example` contains placeholders only.
+Follow the [root README](../README.md). `npm run dev` copies the runner into `public/runner/` and starts the app at `http://localhost:3000`; the Python runner is served from that same origin. Add provider keys in Settings, not `.env.local`. The optional server settings `GEMINI_MODEL` and `ELEVENLABS_TTS_MODEL` are listed in `.env.example`; they are not credentials. Production also requires Upstash Redis URL and token for shared AI checkpoints and visitor throttling.
 
 ## Remaining limits
 
 - Gemini quota, latency, and availability govern the live AI experience. A full pedagogical evaluation has not been done.
-- The app deploys as one Next.js project (the Python runner is bundled by `npm run build`). Public deployment still needs request/account controls and a provider spending policy for the AI routes.
+- The app builds as one Next.js project (the Python runner is bundled by `npm run build`). Vercel Functions is the deployment target, but no Redis resource, credentials, or public deployment were provisioned in this repo work. Production fails closed without shared Redis; public deployment still needs deliberate access and budget controls for the AI and voice routes. Visitors pay for their own provider usage through their supplied keys.
 - Source links into notes are implemented. A general relationship graph and board/code metadata links are not implemented.
 - Pending proposals and execution jobs do not resume after a browser reload. Saved work survives; unfinished messages/runs are marked interrupted.
-- Recent history is bounded to 200 messages, 40 undo changes, 100 runs, and 1,000 operation IDs. Reference retention prioritizes links in the current notebook. Editors limit text to 200,000 characters; the save/import boundary validates all documents. Very large drawings or reference sets can still reach their explicit document limits, at which point saving reports an error and export remains available.
+- Recent history is bounded to 200 messages, 40 undo changes, 100 runs, and 1,000 operation IDs. Reference retention prioritizes links in the current notebook. Editors limit text to 200,000 characters; save, import, and export enforce a shared 32 MiB backup limit. If current documents and required evidence cannot fit, save and export report an error without changing the workspace.
 - The runner shares the app origin; its CSP, Worker, and empty-globals boundary is for study code, not hostile code. Browser memory is not governed by a hard per-run memory quota.
-- Multiplayer, voice, an animated companion, authentication, multiple projects, custom rooms, trace playback, and on-demand asset generation remain outside the MVP.
+- Multiplayer, an animated companion, authentication, multiple projects, custom rooms, trace playback, and on-demand asset generation remain outside the MVP. Voice is delivered; real-device timing and interruption sensitivity still need tuning.
 
-The original [implementation plan](implementation-plan.md) retains the full acceptance plan. No code from the earlier repository was copied into this one.
+The original [implementation plan](implementation-plan.md) is a historical milestone and acceptance record, not the current feature inventory. No code from the earlier repository was copied into this one.
