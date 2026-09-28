@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { readFile } from "node:fs/promises";
 import { goToTool } from "./desk-navigation";
 
 test.use({ reducedMotion: "reduce" });
@@ -31,6 +32,110 @@ test("an exported workspace can be imported after local edits", async ({ page })
   await expect(editor).toContainText("backup");
 });
 
+test("a paused imported answer shows its interruption after reload", async ({ page }) => {
+  await openComputer(page);
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: "Export workspace" }).click(),
+  ]);
+  const backup = JSON.parse(await readFile((await download.path())!, "utf8"));
+  backup.messages = [
+    { id: "paused-answer", role: "assistant", text: "Partial answer", status: "paused" },
+  ];
+  page.once("dialog", (dialog) => void dialog.accept());
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "paused-workspace.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(backup)),
+  });
+  await expect(page.getByText("Workspace imported.", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Toggle study partner" }).click();
+  const partner = page.getByRole("complementary", { name: "AI study partner" });
+  await expect(partner).toContainText("Partial answer");
+  await expect(partner).toContainText("Interrupted when the workspace reloaded.");
+  await expect(partner.getByRole("button", { name: "Continue", exact: true })).toHaveCount(0);
+  await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
+
+  await page.reload();
+  await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Toggle study partner" }).click();
+  await expect(partner).toContainText("Interrupted when the workspace reloaded.");
+  await expect(partner.getByRole("button", { name: "Continue", exact: true })).toHaveCount(0);
+});
+
+test("a spreadsheet source offers to open the spreadsheet", async ({ page }) => {
+  await openComputer(page);
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: "Export workspace" }).click(),
+  ]);
+  const backup = JSON.parse(await readFile((await download.path())!, "utf8"));
+  backup.notes = {
+    ...backup.notes,
+    text: "[Sheet evidence](#source:sheet-source)",
+    revision: 1,
+  };
+  backup.references = [{
+    id: "sheet-source",
+    tool: "spreadsheet",
+    revision: backup.spreadsheet.revision,
+    label: "Sheet evidence",
+    excerpt: "A1: 10",
+  }];
+  page.once("dialog", (dialog) => void dialog.accept());
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "sheet-source.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(backup)),
+  });
+  await goToTool(page, "Journal");
+  await page.getByRole("region", { name: "Study journal" })
+    .getByRole("tab", { name: "Preview", exact: true }).click();
+  await page.getByRole("link", { name: "Sheet evidence" }).click();
+  const source = page.getByRole("dialog", { name: "Sheet evidence" });
+  await expect(source.getByRole("button", { name: "Open Spreadsheet" })).toBeVisible();
+});
+
+test("a source reveals its passage after the Python editor loads", async ({ page }) => {
+  await openComputer(page);
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: "Export workspace" }).click(),
+  ]);
+  const backup = JSON.parse(await readFile((await download.path())!, "utf8"));
+  const passage = "print('reveal me')";
+  backup.code = { ...backup.code, text: `before\n${passage}\nafter`, revision: 1 };
+  backup.notes = { ...backup.notes, text: "[Code evidence](#source:code-source)", revision: 1 };
+  backup.references = [{
+    id: "code-source",
+    tool: "code",
+    revision: 1,
+    label: "Code evidence",
+    excerpt: passage,
+    from: 7,
+    to: 7 + passage.length,
+  }];
+  page.once("dialog", (dialog) => void dialog.accept());
+  await page.locator('input[type="file"]').setInputFiles({
+    name: "code-source.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(backup)),
+  });
+  await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
+  await page.evaluate(() => localStorage.setItem("ideate:layout-preset:v1", "notes"));
+  await page.reload();
+  const journal = page.getByRole("region", { name: "Study journal" });
+  await expect(journal).toBeVisible();
+  await expect(page.locator('[data-editor-tool="code"] .cm-content')).toHaveCount(0);
+  await journal.getByRole("tab", { name: "Preview", exact: true }).click();
+  await journal.getByRole("link", { name: "Code evidence" }).click();
+  await page.getByRole("dialog", { name: "Code evidence" })
+    .getByRole("button", { name: "Open Python" }).click();
+  const editor = page.getByRole("region", { name: "Python workspace", exact: true }).getByRole("textbox");
+  await expect(editor).toBeVisible();
+  await expect.poll(() => editor.evaluate(() => window.getSelection()?.toString())).toBe(passage);
+});
+
 test("header controls leave the full tool area available and chat opens only by its toggle", async ({ page }) => {
   await openComputer(page);
   const header = page.getByRole("banner");
@@ -58,14 +163,14 @@ test("header controls leave the full tool area available and chat opens only by 
   await page.screenshot({ path: test.info().outputPath("desktop-controls.png") });
 });
 
-test("saving and storage errors keep desk navigation and dock geometry stable", async ({ page }) => {
+test("saving and worker errors keep desk navigation and dock geometry stable", async ({ page }) => {
   await openComputer(page);
   const navigation = page.getByRole("link", { name: "Ideate, desk", exact: true });
   const dock = page.getByRole("region", { name: "Python workspace", exact: true });
   const navBefore = await navigation.boundingBox();
   const dockBefore = await dock.boundingBox();
   await page.evaluate(() => {
-    IDBObjectStore.prototype.put = function () { throw new DOMException("Storage full", "QuotaExceededError"); };
+    Worker.prototype.postMessage = function () { throw new DOMException("Storage full", "QuotaExceededError"); };
   });
   const editor = dock.getByRole("textbox");
   await editor.click();

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent } from "react";
 import { Download, Redo2, Undo2 } from "lucide-react";
 import { useWorkspace } from "../workspace/store";
-import { adapters } from "../workspace/adapters";
+import { registerAdapter } from "../workspace/adapters";
 import { columnName, evaluateSheet, exportCsv, formatCell, parseSheet, patchSheet, serializeSheet, type Sheet } from "./sheet";
 import styles from "./SpreadsheetPanel.module.css";
 import { parseClipboard, serializeClipboard } from "./clipboard";
@@ -82,8 +82,7 @@ export default function SpreadsheetPanel({ visible = true }: { visible?: boolean
       const first = ref.ids?.map(point).find((p) => !!p);
       if (first) focusCell(first);
     } };
-    adapters.spreadsheet = adapter;
-    return () => { if (adapters.spreadsheet === adapter) delete adapters.spreadsheet; };
+    return registerAdapter("spreadsheet", adapter);
   }, [focusCell]);
 
   function save(next: Sheet) {

@@ -25,6 +25,37 @@ describe("workspace backup contract", () => {
     expect(restored.changes).toHaveLength(40);
   });
 
+  it("keeps the newest undo entry for each edited document across count compaction", async () => {
+    let data = editText(createWorkspace(), "code", "print(1)");
+    data = compactWorkspace(applyProposal(data, {
+      id: "code-edit",
+      jobId: "job",
+      target: "code",
+      baseRevision: data.code.revision,
+      summary: "Change example",
+      replacements: [{ from: 6, to: 7, text: "2" }],
+      sources: [],
+      sourceRevisions: {},
+    }, "job"));
+    data = editText(data, "notes", "a");
+    for (let i = 0; i < 40; i++) {
+      data = compactWorkspace(applyProposal(data, {
+        id: `notes-edit-${i}`,
+        jobId: "job",
+        target: "notes",
+        baseRevision: data.notes.revision,
+        summary: "Change note",
+        replacements: [{ from: 0, to: 1, text: i % 2 ? "a" : "b" }],
+        sources: [],
+        sourceRevisions: {},
+      }, "job"));
+    }
+
+    const restored = await parseWorkspaceBackup(serializeWorkspaceBackup(data));
+    expect(restored.changes.find((change) => change.id === "code-edit")).toBeDefined();
+    expect(restored.changes.find((change) => change.id === "notes-edit-39")).toBeDefined();
+  });
+
   it("counts UTF-8 bytes and retains embedded board files", async () => {
     const data = createWorkspace();
     data.notes.text = "A 🙂 note";

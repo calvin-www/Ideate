@@ -9,6 +9,7 @@ import {
   type Run,
 } from "../src/features/workspace/model";
 import { useWorkspace } from "../src/features/workspace/store";
+import { uiResponse } from "./ai-client-fixture";
 
 beforeEach(() => {
   useWorkspace.setState({
@@ -29,28 +30,13 @@ function providerCall(name: string, args: Record<string, unknown>) {
       requests === 1
         ? [
             { type: "call", id: "operation-1", name, args },
-            {
-              type: "done",
-              continuation: {
-                contents: [
-                  {
-                    role: "model",
-                    parts: [
-                      { functionCall: { id: "operation-1", name, args } },
-                    ],
-                  },
-                ],
-              },
-            },
+            { type: "done" },
           ]
         : [
             { type: "text", text: "Review recorded." },
-            { type: "done", continuation: { contents: [] } },
+            { type: "done" },
           ];
-    return new Response(
-      events.map((event) => JSON.stringify(event)).join("\n") + "\n",
-      { headers: { "Content-Type": "application/x-ndjson" } },
-    );
+    return uiResponse(events);
   };
   return { request, count: () => requests };
 }
@@ -63,8 +49,8 @@ function providerReadsThenNotes(
   const results: Array<{ source: ArtifactRef; text?: string }> = [];
   const request: typeof fetch = async (_input, init) => {
     const body = JSON.parse(String(init?.body));
-    for (const result of body.toolResults ?? [])
-      if (result.name.startsWith("read_")) results.push(result.result);
+    for (const result of body.results ?? [])
+      if (String(result.id).startsWith("read-")) results.push(result.result);
     const read = reads[step];
     const call = read
       ? { type: "call", id: `read-${step}`, ...read }
@@ -88,36 +74,12 @@ function providerReadsThenNotes(
         : undefined;
     step++;
     const events = call
-      ? [
-          call,
-          {
-            type: "done",
-            continuation: {
-              contents: [
-                {
-                  role: "model",
-                  parts: [
-                    {
-                      functionCall: {
-                        id: call.id,
-                        name: call.name,
-                        args: call.args,
-                      },
-                    },
-                  ],
-                },
-              ],
-            },
-          },
-        ]
+      ? [call, { type: "done" }]
       : [
           { type: "text", text: "Saved the source link." },
-          { type: "done", continuation: { contents: [] } },
+          { type: "done" },
         ];
-    return new Response(
-      events.map((event) => JSON.stringify(event)).join("\n") + "\n",
-      { headers: { "Content-Type": "application/x-ndjson" } },
-    );
+    return uiResponse(events);
   };
   return { request, results };
 }
@@ -169,6 +131,8 @@ describe("client AI review lifecycle", () => {
   it("ignores late streamed text after chat is cleared", async () => {
     let stream!: ReadableStreamDefaultController<Uint8Array>;
     const encoder = new TextEncoder();
+    const chunk = (value: Record<string, unknown>) =>
+      encoder.encode(`data: ${JSON.stringify(value)}\n\n`);
     const collaborator = createCollaborator({
       request: async () =>
         new Response(
@@ -184,22 +148,16 @@ describe("client AI review lifecycle", () => {
     });
     const asking = collaborator.ask("Old question");
     await vi.waitFor(() => expect(stream).toBeDefined());
-    stream.enqueue(
-      encoder.encode(
-        JSON.stringify({ type: "text", text: "Old partial response" }) + "\n",
-      ),
-    );
+    stream.enqueue(chunk({ type: "start" }));
+    stream.enqueue(chunk({ type: "text-start", id: "answer" }));
+    stream.enqueue(chunk({ type: "text-delta", id: "answer", delta: "Old partial response" }));
     await vi.waitFor(() =>
       expect(useWorkspace.getState().data.messages.at(-1)?.text).toBe(
         "Old partial response",
       ),
     );
     collaborator.clearHistory();
-    stream.enqueue(
-      encoder.encode(
-        JSON.stringify({ type: "text", text: "Late text" }) + "\n",
-      ),
-    );
+    stream.enqueue(chunk({ type: "text-delta", id: "answer", delta: "Late text" }));
     stream.close();
     await asking;
     expect(useWorkspace.getState().data.messages).toEqual([]);
@@ -573,7 +531,8 @@ describe("client AI review lifecycle", () => {
     });
     await collaborator.ask("Explain the saved result.");
     expect(contexts).toHaveLength(2);
-    expect(contexts[1]).toEqual(contexts[0]);
+    // The server checkpoint retains the original context; result turns omit it.
+    expect(contexts[1]).toBeUndefined();
     expect(
       useWorkspace
         .getState()
@@ -605,15 +564,12 @@ describe("client AI review lifecycle", () => {
       let shown = "";
       const event = { type: "error", message };
       const collaborator = createCollaborator({
-        request: async () =>
-          new Response(JSON.stringify(event) + (streamed ? "\n" : ""), {
-            status,
-            headers: {
-              "Content-Type": streamed
-                ? "application/x-ndjson"
-                : "application/json",
-            },
-          }),
+        request: async () => streamed
+          ? uiResponse([event])
+          : new Response(JSON.stringify(event), {
+              status,
+              headers: { "Content-Type": "application/json" },
+            }),
         runCode: async () => {
           throw new Error("unexpected run");
         },

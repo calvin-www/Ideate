@@ -1,6 +1,6 @@
 "use client";
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BookOpen,
   Check,
@@ -16,9 +16,10 @@ import {
 } from "lucide-react";
 import { useWorkspace, hydrateWorkspace, flushSave } from "./store";
 import { presets, readPresetId } from "./presets";
+import { toolTitles } from "./layoutPersistence";
 import { type ArtifactRef, type Tool, type View } from "./model";
 import { downloadFile, readSavedWorkspace } from "./persistence";
-import { adapters } from "./adapters";
+import { requestSourceReveal } from "./adapters";
 import { useExecution } from "../execution/useExecution";
 import { RUNNER_URL } from "../execution/runner-client";
 import { useCollaborator } from "../ai/useCollaborator";
@@ -33,6 +34,7 @@ import SettingsDialog from "../settings/SettingsDialog";
 import { useProviderKeys } from "../settings/providerKeys";
 
 const WorkspaceLayout = dynamic(() => import("./WorkspaceLayout"), { ssr: false });
+const StableWorkspaceLayout = memo(WorkspaceLayout);
 
 const BoardEditor = dynamic(() => import("../board/BoardEditor"), {
   ssr: false,
@@ -60,28 +62,38 @@ const deskTools: { id: Tool; label: string; icon: typeof Monitor }[] = [
 ];
 
 export default function WorkspaceShell() {
-  const state = useWorkspace();
-  const {
-    data,
-    view,
-    chatOpen,
-    hydrated,
-    saveStatus,
-    saveError,
-    notice,
-  } = state;
+  const workspaceId = useWorkspace((state) => state.data.id);
+  const codePreview = useWorkspace((state) => state.data.code.text);
+  const notePreview = useWorkspace((state) => state.data.notes.text);
+  const runStatus = useWorkspace((state) => state.data.runs.at(-1)?.status);
+  const boardPreview = useWorkspace((state) => state.boardPreview);
+  const editorEpochs = useWorkspace((state) => state.editorEpochs);
+  const view = useWorkspace((state) => state.view);
+  const chatOpen = useWorkspace((state) => state.chatOpen);
+  const hydrated = useWorkspace((state) => state.hydrated);
+  const recoveryNeeded = useWorkspace((state) => state.recoveryNeeded);
+  const saveStatus = useWorkspace((state) => state.saveStatus);
+  const saveError = useWorkspace((state) => state.saveError);
+  const notice = useWorkspace((state) => state.notice);
   const execution = useExecution();
   const voice = useVoiceSession();
   const engine = useCollaborator(execution.runCode, execution.stopCode, voice.hooks);
   voice.bind(engine);
-  const collaborator = { ...engine, ask: voice.submit };
+  const voiceSubmit = useRef(voice.submit);
+  voiceSubmit.current = voice.submit;
+  const ask = useCallback((text: string) => voiceSubmit.current(text), []);
+  const collaborator = useMemo(
+    () => ({ ...engine, ask }),
+    [ask, engine.ask, engine.resume, engine.approve, engine.reject, engine.cancel, engine.clearHistory, engine.pending, engine.error, engine.paused],
+  );
   const [source, setSource] = useState<ArtifactRef | null>(null);
+  const sourceRevision = useWorkspace((state) => source ? state.data[source.tool].revision : null);
   const [reducedMotion, setReducedMotion] = useState(false);
   const [flat, setFlat] = useState(false);
   const [layoutToolbar, setLayoutToolbar] = useState<HTMLDivElement | null>(null);
   const importInput = useRef<HTMLInputElement>(null);
   const lastTool = useRef<Tool | null>(null);
-  const sourceDialog = useRef<HTMLElement>(null);
+  const sourceDialog = useRef<HTMLDialogElement>(null);
   const sourceOpener = useRef<HTMLElement | null>(null);
   useEffect(() => {
     useProviderKeys.getState().hydrate();
@@ -138,9 +150,7 @@ export default function WorkspaceShell() {
           .catch((error) => useWorkspace.setState({ notice: error.message }));
       }
       if (event.key === "Escape" && !event.defaultPrevented) {
-        if (source) {
-          setSource(null);
-        } else if (composer) {
+        if (composer) {
           useWorkspace.setState({ chatOpen: false });
         }
       }
@@ -153,7 +163,7 @@ export default function WorkspaceShell() {
       window.removeEventListener("pagehide", save);
       document.removeEventListener("visibilitychange", save);
     };
-  }, [execution.runCode, source]);
+  }, [execution.runCode]);
   useEffect(() => {
     if (view === "desk" && lastTool.current) {
       const desk = document.querySelector(".desk-home");
@@ -186,27 +196,10 @@ export default function WorkspaceShell() {
   }, [view]);
   useEffect(() => {
     if (!source) return;
-    const previous = sourceOpener.current;
     const dialog = sourceDialog.current;
-    const trap = (event: KeyboardEvent) => {
-      if (event.key !== "Tab" || !dialog) return;
-      const buttons = Array.from(
-        dialog.querySelectorAll<HTMLElement>('button,a[href],[tabindex="0"]'),
-      );
-      const first = buttons[0],
-        last = buttons.at(-1);
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last?.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first?.focus();
-      }
-    };
-    dialog?.addEventListener("keydown", trap);
+    dialog?.showModal();
     return () => {
-      dialog?.removeEventListener("keydown", trap);
-      previous?.focus({ preventScroll: true });
+      sourceOpener.current?.focus({ preventScroll: true });
     };
   }, [source]);
   useEffect(() => {
@@ -241,6 +234,25 @@ export default function WorkspaceShell() {
     }
   };
   const open = (tool: View) => useWorkspace.getState().navigate(tool);
+  const renderEditor = useCallback((tool: Tool, visible: boolean) =>
+    tool === "board" ? (
+      <BoardEditor key={`${workspaceId}-${editorEpochs.board}`} active={visible} />
+    ) : tool === "code" ? (
+      <CodePanel
+        key={`${workspaceId}-${editorEpochs.code}`}
+        active={visible}
+        runCode={execution.runCode}
+        stopCode={execution.stopCode}
+        runtimeStatus={execution.runtimeStatus}
+        debugCode={execution.debugCode}
+        debugSession={execution.debugSession}
+        resumeDebug={execution.resumeDebug}
+      />
+    ) : tool === "spreadsheet" ? (
+      <SpreadsheetPanel key={`${workspaceId}-${editorEpochs.spreadsheet}`} visible={visible} />
+    ) : (
+      <NotePanel key={`${workspaceId}-${editorEpochs.notes}`} active={visible} onReference={openSource} />
+    ), [workspaceId, editorEpochs, execution.runCode, execution.stopCode, execution.runtimeStatus, execution.debugCode, execution.debugSession, execution.resumeDebug, openSource]);
   return (
     <div className="app-shell">
       <header className="app-header">
@@ -374,20 +386,7 @@ export default function WorkspaceShell() {
             voice.stop();
             collaborator.cancel();
             execution.stopCode();
-            useWorkspace.setState({
-              data: imported,
-              editorEpochs: {
-                ...useWorkspace.getState().editorEpochs,
-                board: useWorkspace.getState().editorEpochs.board + 1,
-              },
-              attention: {},
-              selection: null,
-              boardPreview: "",
-              recoveryNeeded: false,
-              saveError: "",
-              notice: "Workspace imported.",
-            });
-            void flushSave();
+            useWorkspace.getState().replaceWorkspace(imported, "Workspace imported.");
           } catch (error) {
             useWorkspace.setState({
               notice:
@@ -402,7 +401,7 @@ export default function WorkspaceShell() {
         <div className="storage-error" role="alert">
           {saveError}
           <button onClick={exportWorkspace}>Export current work</button>
-          {state.recoveryNeeded ? (
+          {recoveryNeeded ? (
             <button
               onClick={async () => {
                 try {
@@ -489,10 +488,10 @@ export default function WorkspaceShell() {
                     ) : (
                       <DeskScene
                         onOpen={open}
-                        codePreview={data.code.text}
-                        notePreview={data.notes.text}
-                        boardPreview={state.boardPreview || undefined}
-                        runStatus={data.runs.at(-1)?.status}
+                        codePreview={codePreview}
+                        notePreview={notePreview}
+                        boardPreview={boardPreview || undefined}
+                        runStatus={runStatus}
                         reducedMotion={reducedMotion}
                       />
                     )}
@@ -512,42 +511,13 @@ export default function WorkspaceShell() {
                   </div>
                 </section>
               ) : null}
-              <WorkspaceLayout toolbar={layoutToolbar} renderEditor={(tool, visible) =>
-                tool === "board" ? (
-                  <BoardEditor
-                    key={`${data.id}-${state.editorEpochs.board}`}
-                    active={visible}
-                  />
-                ) : tool === "code" ? (
-                  <CodePanel
-                    key={`${data.id}-${state.editorEpochs.code}`}
-                    active={visible}
-                    runCode={execution.runCode}
-                    stopCode={execution.stopCode}
-                    runtimeStatus={execution.runtimeStatus}
-                    debugCode={execution.debugCode}
-                    debugSession={execution.debugSession}
-                    resumeDebug={execution.resumeDebug}
-                  />
-                ) : tool === "spreadsheet" ? (
-                  <SpreadsheetPanel
-                    key={`${data.id}-${state.editorEpochs.spreadsheet}`}
-                    visible={visible}
-                  />
-                ) : (
-                  <NotePanel
-                    key={`${data.id}-${state.editorEpochs.notes}`}
-                    active={visible}
-                    onReference={openSource}
-                  />
-                )
-              } />
+              <StableWorkspaceLayout toolbar={layoutToolbar} renderEditor={renderEditor} />
             </>
           )}
         </main>
         {chatOpen && (
           <ChatPanel
-            key={data.id}
+            key={workspaceId}
             collaborator={collaborator}
             onReference={openSource}
           />
@@ -575,19 +545,24 @@ export default function WorkspaceShell() {
         </div>
       )}
       {source && (
-        <div className="modal-scrim" onClick={() => setSource(null)}>
-          <section
+          <dialog
             ref={sourceDialog}
             className="source-dialog"
-            role="dialog"
-            aria-modal="true"
             aria-labelledby="source-title"
-            onClick={(e) => e.stopPropagation()}
+            onClose={() => setSource(null)}
+            onClick={(event) => {
+              if (event.target !== event.currentTarget) return;
+              const bounds = event.currentTarget.getBoundingClientRect();
+              if (
+                event.clientX < bounds.left || event.clientX > bounds.right ||
+                event.clientY < bounds.top || event.clientY > bounds.bottom
+              ) event.currentTarget.close();
+            }}
           >
             <button
               className="icon-button modal-close"
               aria-label="Close source"
-              onClick={() => setSource(null)}
+              onClick={() => sourceDialog.current?.close()}
               autoFocus
             >
               <X size={18} />
@@ -596,7 +571,7 @@ export default function WorkspaceShell() {
               Saved source · revision {source.revision}
             </p>
             <h2 id="source-title">{source.label}</h2>
-            {data[source.tool].revision !== source.revision && (
+            {sourceRevision !== source.revision && (
               <p className="source-outdated">
                 This source has changed. The excerpt below is from the original
                 revision.
@@ -608,21 +583,17 @@ export default function WorkspaceShell() {
             <button
               className="button primary"
               onClick={() => {
+                sourceOpener.current = null;
+                sourceDialog.current?.close();
                 useWorkspace.getState().navigate(source.tool, { reveal: true });
-                if (data[source.tool].revision === source.revision)
-                  setTimeout(() => adapters[source.tool]?.reveal(source), 100);
-                setSource(null);
+                if (sourceRevision === source.revision)
+                  requestSourceReveal(source);
               }}
             >
               Open{" "}
-              {source.tool === "code"
-                ? "Python"
-                : source.tool === "board"
-                  ? "whiteboard"
-                  : "journal"}
+              {toolTitles[source.tool]}
             </button>
-          </section>
-        </div>
+          </dialog>
       )}
     </div>
   );

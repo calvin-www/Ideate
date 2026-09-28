@@ -1,44 +1,99 @@
-import { describe, expect, it } from "vitest";
-import { playStep } from "../src/features/voice/playback";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createNarrationQueue, playStep } from "../src/features/voice/playback";
 
-describe("speech and writing playback", () => {
-  it("starts writing during audible speech and waits for both", async () => {
-    const events: string[] = [];
-    let finishSpeech!: () => void;
-    const done = playStep("Look at the midpoint.", new AbortController().signal, {
-      speak: async (_text, _signal, start) => {
-        await Promise.resolve(); events.push("speaking"); start();
-        await new Promise<void>((resolve) => { finishSpeech = resolve; });
-        events.push("speech finished");
-      },
-      present: async () => { events.push("writing"); },
-    }).then(() => { events.push("done"); });
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(events).toEqual(["speaking", "writing"]);
-    finishSpeech(); await done;
-    expect(events).toEqual(["speaking", "writing", "speech finished", "done"]);
+afterEach(() => vi.useRealTimers());
+
+describe("teaching step playback", () => {
+  it("presents a step when narration is off", async () => {
+    const present = vi.fn().mockResolvedValue(undefined);
+
+    await playStep("Look at the midpoint.", new AbortController().signal, { present });
+
+    expect(present).toHaveBeenCalledOnce();
   });
 
-  it("cancels audio if the visual presentation fails", async () => {
+  it("starts visual progress with narration and finishes without waiting for slow audio", async () => {
+    vi.useFakeTimers();
+    const events: string[] = [];
+    const done = playStep("Look at the midpoint.", new AbortController().signal, {
+      narrate: async () => {
+        events.push("audio started");
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        events.push("audio finished");
+      },
+      present: async () => {
+        events.push("visual started");
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        events.push("visual finished");
+      },
+    }).then(() => events.push("step finished"));
+
+    await vi.advanceTimersByTimeAsync(100);
+    await done;
+    expect(events).toContain("audio started");
+    expect(events).toContain("visual started");
+    expect(events).toContain("visual finished");
+    expect(events).toContain("step finished");
+    expect(events).not.toContain("audio finished");
+    await vi.advanceTimersByTimeAsync(900);
+  });
+
+  it("keeps a visual step successful when narration fails", async () => {
+    const present = vi.fn().mockResolvedValue(undefined);
+
+    await expect(playStep("Continue.", new AbortController().signal, {
+      narrate: async () => { throw new Error("Speech unavailable"); },
+      present,
+    })).resolves.toBeUndefined();
+    expect(present).toHaveBeenCalledOnce();
+  });
+
+  it("aborts narration when visual progression fails", async () => {
     let audioSignal!: AbortSignal;
-    const done = playStep("Drawing.", new AbortController().signal, {
-      speak: (_text, signal, start) => new Promise<void>((_resolve, reject) => {
-        audioSignal = signal;
-        signal.addEventListener("abort", () => reject(signal.reason), { once: true });
-        start();
-      }),
+
+    await expect(playStep("Drawing.", new AbortController().signal, {
+      narrate: async (_text, signal) => { audioSignal = signal; },
       present: async () => { throw new Error("The document changed"); },
-    });
-    await expect(done).rejects.toThrow("The document changed");
+    })).rejects.toThrow("The document changed");
     expect(audioSignal.aborted).toBe(true);
   });
+});
 
-  it("never starts drawing when speech fails to start", async () => {
-    let drawn = false;
-    await expect(playStep("Hello", new AbortController().signal, {
-      speak: async () => { throw new Error("Speech unavailable"); },
-      present: async () => { drawn = true; },
-    })).rejects.toThrow("Speech unavailable");
-    expect(drawn).toBe(false);
+describe("narration queue", () => {
+  it("delivers phrases in order even after an audio failure", async () => {
+    const queue = createNarrationQueue();
+    const events: string[] = [];
+    let finishFirst!: () => void;
+    const signal = new AbortController().signal;
+    queue.enqueue("first", signal, async () => {
+      events.push("first started");
+      await new Promise<void>((resolve) => { finishFirst = resolve; });
+      throw new Error("Speech unavailable");
+    });
+    queue.enqueue("second", signal, async () => { events.push("second started"); });
+
+    await vi.waitFor(() => expect(events).toEqual(["first started"]));
+    finishFirst();
+    await vi.waitFor(() => expect(events).toEqual(["first started", "second started"]));
+  });
+
+  it("stops active and queued audio, then accepts a new turn", async () => {
+    const queue = createNarrationQueue();
+    const events: string[] = [];
+    const signal = new AbortController().signal;
+    queue.enqueue("first", signal, async (audioSignal) => {
+      events.push("first started");
+      await new Promise<void>((_resolve, reject) =>
+        audioSignal.addEventListener("abort", () => reject(audioSignal.reason), { once: true }));
+    });
+    queue.enqueue("second", signal, async () => { events.push("second started"); });
+    await vi.waitFor(() => expect(events).toEqual(["first started"]));
+
+    queue.stop();
+    await Promise.resolve();
+    expect(events).toEqual(["first started"]);
+    queue.resume();
+    queue.enqueue("third", signal, async () => { events.push("third started"); });
+    await vi.waitFor(() => expect(events).toEqual(["first started", "third started"]));
   });
 });

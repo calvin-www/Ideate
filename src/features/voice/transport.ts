@@ -1,5 +1,5 @@
 "use client";
-import { keyHeaders, useProviderKeys } from "../settings/providerKeys";
+import { voiceHeaders, useProviderKeys } from "../settings/providerKeys";
 
 export type MicrophoneCallbacks = {
   onSpeechStart(): void;
@@ -78,24 +78,37 @@ function publicError(error: unknown, fallback: string): string {
   return fallback;
 }
 
+function endpointError(payload: unknown, fallback: string): string {
+  if (
+    payload &&
+    typeof payload === "object" &&
+    (payload as { type?: unknown }).type === "error"
+  ) {
+    const message = (payload as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim())
+      return message.trim().slice(0, 500);
+  }
+  return fallback;
+}
+
 async function fetchScribeToken(signal: AbortSignal): Promise<string> {
   const response = await fetch("/api/voice/session", {
     method: "POST",
-    headers: keyHeaders(useProviderKeys.getState().keys),
+    headers: voiceHeaders(useProviderKeys.getState().keys),
     signal,
   });
-  const payload = (await response.json().catch(() => ({}))) as {
-    token?: unknown;
-    error?: unknown;
-  };
-  if (!response.ok || typeof payload.token !== "string") {
+  const payload: unknown = await response.json().catch(() => undefined);
+  if (
+    !response.ok ||
+    !payload ||
+    typeof payload !== "object" ||
+    typeof (payload as { token?: unknown }).token !== "string"
+  ) {
     throw new VoiceTransportError(
-      typeof payload.error === "string"
-        ? payload.error
-        : "Could not start transcription.",
+      endpointError(payload, "Could not start transcription."),
     );
   }
-  return payload.token;
+  return (payload as { token: string }).token;
 }
 
 export async function connectMicrophone(
@@ -428,19 +441,15 @@ export async function speak(
       method: "POST",
       headers: {
         "content-type": "application/json",
-        ...keyHeaders(useProviderKeys.getState().keys),
+        ...voiceHeaders(useProviderKeys.getState().keys),
       },
       body: JSON.stringify({ text }),
       signal: requestController.signal,
     });
     if (!response.ok || !response.body) {
-      const payload = (await response.json().catch(() => ({}))) as {
-        error?: unknown;
-      };
+      const payload: unknown = await response.json().catch(() => undefined);
       throw new VoiceTransportError(
-        typeof payload.error === "string"
-          ? payload.error
-          : "Speech playback could not start.",
+        endpointError(payload, "Speech playback could not start."),
       );
     }
     const sampleRate = Number(response.headers.get("x-audio-sample-rate"));

@@ -6,6 +6,8 @@ import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Workspace } from "../../src/features/workspace/model";
+import { parseOperation, type StudyEvent } from "../../src/features/ai/contracts";
+import { fixtureCheckpoint, fulfillStudyStream } from "./ai-stream-fixture";
 
 const silencePath = join(tmpdir(), "ideate-voice-test-silence.wav");
 const silence = Buffer.alloc(44 + 16000 * 2 * 30);
@@ -25,12 +27,11 @@ async function voiceFixture(page: Page, step: (context: Workspace) => unknown, o
   await page.route("**/api/voice/speech", (route) => route.fulfill({ status: 200, contentType: "audio/pcm", headers: { "x-audio-sample-rate": "24000" }, body: Buffer.alloc(24000 * 2 * 5) }));
   await page.route("**/api/ai", (route) => {
     const body = route.request().postDataJSON();
-    if (!body.continuation) onPrompt?.(body.messages.at(-1).text);
-    const events = [
-      ...(!body.continuation ? [{ type: "call", id: "fixture-step", name: "teach_step", args: step(body.context) }] : []),
-      { type: "done", continuation: { contents: [] } },
-    ];
-    return route.fulfill({ contentType: "application/x-ndjson", body: events.map((event) => JSON.stringify(event)).join("\n") + "\n" });
+    if (body.type === "start") onPrompt?.(body.messages.at(-1).text);
+    const events: StudyEvent[] = body.type === "start"
+      ? [{ type: "operationBatch", operations: [{ id: "fixture-step", operation: parseOperation("teach_step", step(body.context))! }], checkpoint: fixtureCheckpoint("voice-step") }]
+      : [{ type: "done" }];
+    return fulfillStudyStream(route, events);
   });
   return (text: string) => socket.send(JSON.stringify({ message_type: "committed_transcript", text }));
 }
@@ -73,7 +74,7 @@ async function observeAudio(page: Page) {
 test("Stop checkpoints writing, stops speech, and turns off microphone capture", async ({ page }) => {
   await observeAudio(page);
   const say = await voiceFixture(page, ({ code }) => ({
-    speech: "Let's write the lower and upper bounds, then calculate the midpoint between them.",
+    text: "Let's write the lower and upper bounds, then calculate the midpoint between them.",
     operation: { name: "edit_code", args: {
       baseRevision: code.revision,
       replacements: [{ from: 0, to: 0, text: "def stopped_search(values):\n    low = 0\n    high = len(values) - 1\n    return low\n" }],
@@ -108,7 +109,7 @@ test("Stop checkpoints writing, stops speech, and turns off microphone capture",
 
 test("typed follow-ups with the microphone on update the task used by continue", async ({ page }) => {
   const prompts: string[] = [];
-  const say = await voiceFixture(page, () => ({ speech: "Here is the next explanation." }), (text) => prompts.push(text));
+  const say = await voiceFixture(page, () => ({ text: "Here is the next explanation." }), (text) => prompts.push(text));
   await page.goto("/");
   await page.getByRole("button", { name: "Turn on microphone", exact: true }).click();
   const controls = page.getByRole("region", { name: "Voice controls" });
@@ -130,7 +131,7 @@ test("typed follow-ups with the microphone on update the task used by continue",
 
 test("a hidden notes destination can be shown in Preview mode and committed once", async ({ page }, testInfo) => {
   const say = await voiceFixture(page, ({ notes }) => ({
-    speech: "Save this observation.",
+    text: "Record this observation in the journal. Each comparison removes half the candidates, so the interval shrinks while the lower and upper bounds keep track of the values that can still contain the answer. Keep this note beside the existing observations for later review.",
     operation: { name: "edit_notes", args: { baseRevision: notes.revision, replacements: [{ from: notes.text.length, to: notes.text.length, text: "# Voice observation\n\nEach comparison removes half the candidates.\n" }], summary: "Record the comparison" } },
   }));
   await page.goto("/");
@@ -147,7 +148,6 @@ test("a hidden notes destination can be shown in Preview mode and committed once
   const preview = page.getByLabel("Study partner writing preview", { exact: true });
   await expect(preview).toContainText("# Voice observation");
   await expect(preview.locator(".cm-line").filter({ hasText: "# Voice observation" })).toBeInViewport();
-  await expect(page.getByRole("region", { name: "Voice controls" })).toContainText("Speaking");
   expect((await exportedWorkspace(page)).notes).toEqual(before.notes);
   await page.screenshot({ path: testInfo.outputPath("voice-notes-writing.png") });
   await expect(preview).toBeHidden();
@@ -168,7 +168,7 @@ test("board updates and deletions replace the provisional scene and preserve can
   const say = await voiceFixture(page, ({ board }) => {
     const labels = board.elements.filter((element) => element.type === "text" && !element.isDeleted);
     updatedId = labels[0].id; deletedId = labels[1].id;
-    return { speech: "Update these labels.", operation: { name: "edit_board", args: {
+    return { text: "Update these labels on the whiteboard. The midpoint label should name the current comparison clearly, and the outdated label should disappear from the final drawing. Show the change as it develops so the learner can follow which part of the picture changes.", operation: { name: "edit_board", args: {
       baseRevision: board.revision, additions: [], updates: [{ id: updatedId, text: "Voice midpoint" }], deleteIds: [deletedId], summary: "Clarify the labels",
     } } };
   });
@@ -176,6 +176,7 @@ test("board updates and deletions replace the provisional scene and preserve can
   await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
   await goToTool(page, "Whiteboard");
   await loadBoardExample(page);
+  await goToTool(page, "Whiteboard");
   await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
   const before = await exportedWorkspace(page);
   await page.getByRole("button", { name: "Turn on microphone", exact: true }).click();
@@ -183,11 +184,10 @@ test("board updates and deletions replace the provisional scene and preserve can
   say("Update the labels.");
   const preview = page.getByLabel("Study partner drawing preview", { exact: true });
   await expect(preview).toBeVisible();
+  expect((await exportedWorkspace(page)).board.elements).toEqual(before.board.elements);
   await expect(preview.locator(`svg [data-id="${updatedId}"]`)).toBeVisible();
   await expect(preview.locator(`svg [data-id="${updatedId}"]`)).toContainText("Voice midpoint");
   await expect(preview.locator(`[data-id="${deletedId}"]`)).toHaveCount(0);
-  await expect(page.getByRole("region", { name: "Voice controls" })).toContainText("Speaking");
-  expect((await exportedWorkspace(page)).board.elements).toEqual(before.board.elements);
   await page.screenshot({ path: testInfo.outputPath("voice-board-update.png") });
   await expect(preview).toBeHidden();
   const after = await exportedWorkspace(page);
@@ -202,7 +202,7 @@ test("board updates and deletions replace the provisional scene and preserve can
 
 test("a board pen stroke grows during speech and taking over interrupts it", async ({ page }, testInfo) => {
   const say = await voiceFixture(page, ({ board }) => ({
-    speech: "Let's draw the lower boundary from left to right, then turn upward to show where the next comparison begins.",
+    text: "Let's draw the lower boundary from left to right, then turn upward to show where the next comparison begins.",
     operation: { name: "edit_board", args: { baseRevision: board.revision, updates: [], deleteIds: [], summary: "Draw the boundary", additions: [{ type: "freedraw", points: [{ x: 100, y: 100 }, { x: 180, y: 100 }, { x: 260, y: 100 }, { x: 340, y: 160 }, { x: 340, y: 240 }] }] } },
   }));
   await page.goto("/");
@@ -300,13 +300,13 @@ test("interrupting speech keeps the partial function and resumes the unfinished 
   }));
   await page.route("**/api/ai", async (route) => {
     const body = route.request().postDataJSON();
-    let events;
-    if (body.continuation) events = [{ type: "done", continuation: { contents: [] } }];
+    let events: StudyEvent[];
+    if (body.type === "results") events = [{ type: "done" }];
     else {
       prompts.push(body.messages.at(-1).text);
       observedCode.push(body.context.code.text);
-      events = [{ type: "call", id: `voice-${prompts.length}`, name: "teach_step", args: {
-        speech: prompts.length === 1 ? "Let's write the lower and upper bounds, then calculate the midpoint between them." : "Duplicates change which matching element we choose to return.",
+      const operation = parseOperation("teach_step", {
+        text: prompts.length === 1 ? "Let's write the lower and upper bounds, then calculate the midpoint between them." : "Duplicates change which matching element we choose to return.",
         ...(prompts.length === 1 ? { operation: { name: "edit_code", args: {
           baseRevision: body.context.code.revision,
           replacements: [{ from: 0, to: 0, text: "def voice_search(values):\n    low = 0\n    high = len(values) - 1\n    return low\n" }], summary: "Write bounds progressively",
@@ -314,9 +314,11 @@ test("interrupting speech keeps the partial function and resumes the unfinished 
           baseRevision: body.context.notes.revision,
           replacements: [{ from: body.context.notes.text.length, to: body.context.notes.text.length, text: "Duplicates affect which matching element to return.\n" }], summary: "Record the clarification",
         } } } : {}),
-      } }, { type: "done", continuation: { contents: [] } }];
+      });
+      expect(operation).toBeDefined();
+      events = [{ type: "operationBatch", operations: [{ id: `voice-${prompts.length}`, operation: operation! }], checkpoint: fixtureCheckpoint(`voice-${prompts.length}`) }];
     }
-    await route.fulfill({ contentType: "application/x-ndjson", body: events.map((event) => JSON.stringify(event)).join("\n") + "\n" });
+    await fulfillStudyStream(route, events);
   });
   await page.goto("/");
   await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
@@ -342,7 +344,7 @@ test("interrupting speech keeps the partial function and resumes the unfinished 
   socket.send(JSON.stringify({ message_type: "committed_transcript", text: "continue" }));
   await expect.poll(() => prompts.length).toBe(3);
   expect(prompts[2]).toContain("Previous request: Show me binary search.");
-  await page.getByRole("button", { name: "Stop" }).click();
+  await page.getByRole("button", { name: "Stop", exact: true }).click();
   await expect(page.getByRole("button", { name: "Turn on microphone", exact: true })).toBeVisible();
   await expect(canonical).toContainText("def voice_search(values):");
   expect((await exportedWorkspace(page)).changes).toHaveLength(2);

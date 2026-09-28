@@ -88,6 +88,7 @@ it("retains image bytes when an AI change is applied, exported, and undone", () 
       id: "move-picture",
       jobId: "job",
       target: "board",
+      boardPatch: {},
       baseRevision: 1,
       summary: "Move image",
       sources: [],

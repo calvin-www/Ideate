@@ -1,10 +1,18 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+const savedWorkspace = vi.hoisted(() => ({ value: undefined as unknown }));
+vi.mock("idb-keyval", () => ({
+  get: async () => savedWorkspace.value,
+  set: async (_key: string, value: unknown) => {
+    savedWorkspace.value = value;
+  },
+}));
 import { clearWorkspaceData } from "../src/features/workspace/clearWorkspace";
 import {
   createWorkspace,
   validateWorkspace,
   type Tool,
 } from "../src/features/workspace/model";
+import { hydrateWorkspace, useWorkspace } from "../src/features/workspace/store";
 
 describe("clearing workspace data", () => {
   it("starts an empty workspace with no conversation, executions, references, or undo history", () => {
@@ -77,4 +85,75 @@ describe("clearing workspace data", () => {
       );
     },
   );
+});
+
+it("clears a pending notes reveal when resetting the whole workspace", () => {
+  const previous = useWorkspace.getState();
+  try {
+    useWorkspace.setState({
+      data: createWorkspace(),
+      hydrated: false,
+      view: "code",
+      page: "code",
+      navigationEpoch: 0,
+      navigationReveal: null,
+      navigationPreset: null,
+      visibleTools: ["notes"],
+      boardPreview: "old preview",
+      selection: {
+        tool: "notes",
+        revision: 0,
+        text: "old selection",
+      },
+    });
+    useWorkspace.getState().navigate("notes", { reveal: true });
+    useWorkspace.setState({
+      selection: { tool: "notes", revision: 0, text: "old selection" },
+      attention: {
+        notes: {
+          id: "cue",
+          jobId: "job",
+          workspaceId: useWorkspace.getState().data.id,
+          target: "notes",
+          revision: 0,
+          mode: "point",
+          label: "Old cue",
+          from: 0,
+          to: 0,
+        },
+      },
+    });
+    const revealedEpoch = useWorkspace.getState().navigationEpoch;
+
+    useWorkspace.getState().clearData("all");
+
+    expect(useWorkspace.getState()).toMatchObject({
+      view: "code",
+      page: "code",
+      visited: ["code"],
+      visibleTools: [],
+      navigationPreset: "code",
+      navigationReveal: null,
+      navigationEpoch: revealedEpoch + 1,
+      selection: null,
+      attention: {},
+      boardPreview: "",
+    });
+  } finally {
+    useWorkspace.setState(previous, true);
+  }
+});
+
+it("shows a persisted paused answer as interrupted after hydration", async () => {
+  const data = createWorkspace();
+  data.messages = [
+    { id: "partial", role: "assistant", text: "An unfinished answer", status: "paused" },
+  ];
+  savedWorkspace.value = data;
+
+  await hydrateWorkspace({ view: "code", preset: "code" });
+
+  expect(useWorkspace.getState().data.messages).toMatchObject([
+    { id: "partial", text: "An unfinished answer", status: "interrupted" },
+  ]);
 });

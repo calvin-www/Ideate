@@ -1,7 +1,8 @@
 "use client";
 import { create } from "zustand";
 import { useWorkspace } from "../workspace/store";
-import { applyProposal, checkProposal, type BoardElement, type Proposal } from "../workspace/model";
+import { workspaceCommands } from "../workspace/commands";
+import { type BoardElement, type Proposal } from "../workspace/model";
 import { boardFrame, checkpointBoard, textFrame } from "./progression";
 
 export type Presentation = {
@@ -34,8 +35,8 @@ export function checkpointPresentation(): boolean {
   const state = useWorkspace.getState();
   const proposal = current.proposal;
   try {
-    checkProposal(state.data, proposal, state.jobId);
     const before = proposal.target === "board" ? state.data.board.elements : state.data[proposal.target].text;
+    workspaceCommands.check({ proposal, preview: before });
     const painted = usePresentation.getState().paintedBoard;
     const paintedText = usePresentation.getState().paintedText;
     const visible = proposal.target === "board"
@@ -45,21 +46,24 @@ export function checkpointPresentation(): boolean {
       clearPresentation(proposal.jobId);
       return false;
     }
-    const checkpoint = {
-      ...proposal,
-      summary: `${proposal.summary} (paused here)`,
-      ...(typeof visible === "string" ? { replacements: [{ from: 0, to: String(before).length, text: visible }] } : {}),
-    };
+    const checkpoint: Proposal = proposal.target === "board"
+      ? { ...proposal, summary: `${proposal.summary} (paused here)` }
+      : {
+          ...proposal,
+          summary: `${proposal.summary} (paused here)`,
+          replacements: typeof visible === "string"
+            ? [{ from: 0, to: String(before).length, text: visible }]
+            : proposal.replacements,
+        };
     const board = Array.isArray(visible) ? checkpointBoard(visible) : undefined;
     if (board && JSON.stringify(board) === JSON.stringify(before)) {
       clearPresentation(proposal.jobId);
       return false;
     }
-    const next = applyProposal(state.data, checkpoint, state.jobId, board);
     // Retire guards before publishing the checkpoint so our own commit is not
     // mistaken for a conflicting manual edit. Late completion cannot apply it twice.
     clearPresentation(proposal.jobId);
-    state.setData(() => next);
+    workspaceCommands.apply({ proposal: checkpoint, preview: board ?? visible });
     return true;
   } catch {
     // A later manual edit or a replaced workspace wins over an old preview.
@@ -76,7 +80,7 @@ export function takeOverPresentation() {
 export async function presentChange(proposal: Proposal, preview: string | BoardElement[], signal: AbortSignal, durationMs: number): Promise<void> {
   signal.throwIfAborted();
   clearPresentation();
-  // Cell patches commit together after speech; never animate serialized sheet data.
+  // Cell patches commit together without animating serialized sheet data.
   if (proposal.target === "spreadsheet") return;
   const initial = useWorkspace.getState().data;
   const reduced = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -118,8 +122,8 @@ export async function presentChange(proposal: Proposal, preview: string | BoardE
             }),
       } });
       if (progress < 1) frame = requestAnimationFrame(tick);
-      // Keep the revision/abort guards until the paired speech ends and the
-      // collaborator retires this preview immediately before committing.
+      // Keep the revision/abort guards until the collaborator retires this
+      // preview immediately before committing.
       else resolve();
     }
     signal.addEventListener("abort", cancel, { once: true });

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { uiResponse } from "./ai-client-fixture";
 
 // IndexedDB is a browser boundary; preference and request behavior use the real store.
 vi.mock("idb-keyval", () => ({
@@ -93,11 +94,11 @@ describe("study partner panel ownership", () => {
     const { createCollaborator } = await import("../src/features/ai/useCollaborator");
     useWorkspace.setState({ chatOpen, view: "notes" });
     const collaborator = createCollaborator({
-      request: async () => new Response(
-        [{ type: "text", text: "Keep comparing the bounds." }, { type: "done", continuation: { contents: [] } }]
-          .map((event) => JSON.stringify(event)).join("\n") + "\n",
-      ),
-      voice: { enabled: () => voice, context: () => ({}), play: async () => {} },
+      request: async () => uiResponse([
+        { type: "text", text: "Keep comparing the bounds." },
+        { type: "done" },
+      ]),
+      voice: { enabled: () => voice, context: () => ({}), narrate: () => {} },
       runCode: vi.fn(),
       onPending: vi.fn(),
       onError: vi.fn(),

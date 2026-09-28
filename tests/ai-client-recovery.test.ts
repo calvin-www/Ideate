@@ -3,6 +3,7 @@ import { createCollaborator } from "../src/features/ai/useCollaborator";
 import { createWorkspace } from "../src/features/workspace/model";
 import { useWorkspace } from "../src/features/workspace/store";
 import { validateImport } from "../src/features/workspace/model";
+import { uiResponse } from "./ai-client-fixture";
 
 beforeEach(() =>
   useWorkspace.setState({
@@ -14,15 +15,8 @@ beforeEach(() =>
     autoApplyChanges: false,
   }),
 );
-const resume = {
-  contents: [{ role: "user", parts: [{ text: "Continue" }] }],
-  token: "opaque-checkpoint",
-  append: true,
-};
-const stream = (events: unknown[]) =>
-  new Response(events.map((event) => JSON.stringify(event)).join("\n") + "\n", {
-    headers: { "Content-Type": "application/x-ndjson" },
-  });
+const checkpoint = { token: "opaque-checkpoint", state: "fixture-state" };
+const stream = uiResponse;
 
 describe("AI recovery client", () => {
   it("keeps long continued answers within the persisted message size limit", async () => {
@@ -38,12 +32,12 @@ describe("AI recovery client", () => {
         ++calls === 1
           ? stream([
               { type: "text", text: first },
-              { type: "paused", message: "Paused", resume },
+              { type: "paused", message: "Paused", checkpoint, append: true },
             ])
           : stream([
               { type: "text", text: second },
               { type: "text", text: " done" },
-              { type: "done", continuation: { contents: [] } },
+              { type: "done" },
             ]),
     });
     await client.ask("Explain");
@@ -72,11 +66,11 @@ describe("AI recovery client", () => {
           ? stream([
               { type: "text", text: "First part. " },
               { type: "status", message: "Continuing…" },
-              { type: "paused", message: "Paused at the limit.", resume },
+              { type: "paused", message: "Paused at the limit.", checkpoint, append: true },
             ])
           : stream([
               { type: "text", text: "Second part." },
-              { type: "done", continuation: { contents: [] } },
+              { type: "done" },
             ]);
       },
     });
@@ -89,7 +83,10 @@ describe("AI recovery client", () => {
     expect(bodies).toHaveLength(1);
     expect(onPause).toHaveBeenLastCalledWith("Paused at the limit.");
     await client.resume();
-    expect(bodies[1].resume).toEqual(resume);
+    expect(bodies[1]).toEqual({
+      type: "continue",
+      checkpoint,
+    });
     expect(useWorkspace.getState().data.messages).toHaveLength(2);
     expect(useWorkspace.getState().data.messages.at(-1)).toMatchObject({
       text: "First part. Second part.",
@@ -113,17 +110,14 @@ describe("AI recovery client", () => {
           ? stream([
               { type: "text", text: "Reading your code." },
               { type: "call", id: "read", name: "read_code", args: {} },
-              {
-                type: "done",
-                continuation: { contents: [], token: "budget-checkpoint" },
-              },
+              { type: "done" },
             ])
           : stream([
               { type: "text", text: "Discard this" },
               { type: "replace", text: "" },
               { type: "status", message: "Continuing…" },
               { type: "text", text: "Final explanation" },
-              { type: "done", continuation: { contents: [] } },
+              { type: "done" },
             ]),
     });
     await client.ask("Explain my code");
@@ -143,7 +137,7 @@ describe("AI recovery client", () => {
         runCode: vi.fn(),
         request: async () => {
           calls++;
-          return stream([{ type: "paused", message: "Paused", resume }]);
+          return stream([{ type: "paused", message: "Paused", checkpoint, append: true }]);
         },
       });
       await client.ask("Explain");

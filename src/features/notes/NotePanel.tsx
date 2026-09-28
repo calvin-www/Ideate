@@ -50,6 +50,7 @@ export default function NotePanel({ active, onReference }: NotePanelProps) {
   const saveStatus = useWorkspace((state) => state.saveStatus);
   const saveError = useWorkspace((state) => state.saveError);
   const [mode, setMode] = useState<"edit" | "preview">("edit");
+  const showEditor = useCallback(() => setMode("edit"), []);
   const id = useId();
   const preview = useRef<HTMLDivElement>(null);
   const cue = useWorkspace((state) => state.attention.notes);
@@ -142,27 +143,6 @@ export default function NotePanel({ active, onReference }: NotePanelProps) {
     [onReference],
   );
 
-  // References can reopen a selected passage even if the journal was in Preview.
-  useEffect(() => {
-    const editor = adapters.notes;
-    if (!editor) return;
-    const revealable = {
-      ...editor,
-      focus: () => {
-        setMode("edit");
-        requestAnimationFrame(() => editor.focus());
-      },
-      reveal: (ref: Parameters<typeof editor.reveal>[0]) => {
-        setMode("edit");
-        requestAnimationFrame(() => editor.reveal(ref));
-      },
-    };
-    adapters.notes = revealable;
-    return () => {
-      if (adapters.notes === revealable) adapters.notes = editor;
-    };
-  }, []);
-
   const savedLabel =
     saveStatus === "saved"
       ? "Saved on this device"
@@ -252,7 +232,7 @@ export default function NotePanel({ active, onReference }: NotePanelProps) {
         hidden={mode !== "edit"}
         inert={mode !== "edit"}
       >
-        <TextEditor target="notes" active={active && mode === "edit"} />
+        <TextEditor target="notes" active={active && mode === "edit"} onActivate={showEditor} />
       </div>
       <div
         className={styles.previewSurface}

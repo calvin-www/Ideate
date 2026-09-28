@@ -18,9 +18,12 @@ export function fitWorkspace(data: Workspace): Workspace {
   );
   fitted = { ...fitted, changes: [...fitted.changes], messages: [...fitted.messages], runs: [...fitted.runs], references: [...fitted.references] };
   while (byteLength(serialized) > MAX_WORKSPACE_BYTES) {
-    const oldChange = fitted.changes.findIndex((change, index) =>
-      fitted.changes.slice(index + 1).some((later) => later.target === change.target),
-    );
+    const newestUndo = new Map<string, number>();
+    fitted.changes.forEach((change, index) => {
+      if (!change.undone) newestUndo.set(change.target, index);
+    });
+    const required = new Set(newestUndo.values());
+    const oldChange = fitted.changes.findIndex((_, index) => !required.has(index));
     if (oldChange >= 0) fitted.changes.splice(oldChange, 1);
     else if (fitted.messages.length) fitted.messages.shift();
     else if (fitted.runs.length) fitted.runs.shift();

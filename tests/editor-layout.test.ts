@@ -11,6 +11,8 @@ import {
   clearPreviousArrangement,
 } from "../src/features/workspace/layoutPersistence";
 import { useWorkspace } from "../src/features/workspace/store";
+import { createWorkspace } from "../src/features/workspace/model";
+import { registerAdapter, requestSourceReveal } from "../src/features/workspace/adapters";
 
 const saved = () => ({
   version: 1,
@@ -211,4 +213,109 @@ it("revealing the current tool retains its selection while a fresh tool launch c
   expect(useWorkspace.getState().selection).toBe(selection);
   useWorkspace.getState().navigate("code");
   expect(useWorkspace.getState().selection).toBeNull();
+});
+
+it("imports into a fresh code layout after a notes reveal", () => {
+  const previous = useWorkspace.getState();
+  try {
+    useWorkspace.setState({
+      data: createWorkspace(),
+      hydrated: false,
+      view: "code",
+      page: "code",
+      navigationEpoch: 0,
+      navigationReveal: null,
+      navigationPreset: null,
+      visibleTools: ["notes"],
+      boardPreview: "old preview",
+    });
+    useWorkspace.getState().navigate("notes", { reveal: true });
+    useWorkspace.setState({
+      selection: { tool: "notes", revision: 0, text: "old selection" },
+      attention: {
+        notes: {
+          id: "cue",
+          jobId: "job",
+          workspaceId: useWorkspace.getState().data.id,
+          target: "notes",
+          revision: 0,
+          mode: "point",
+          label: "Old cue",
+          from: 0,
+          to: 0,
+        },
+      },
+    });
+    const revealedEpoch = useWorkspace.getState().navigationEpoch;
+    const imported = createWorkspace();
+
+    useWorkspace.getState().replaceWorkspace(imported);
+
+    expect(useWorkspace.getState()).toMatchObject({
+      data: imported,
+      view: "code",
+      page: "code",
+      visited: ["code"],
+      visibleTools: [],
+      navigationPreset: "code",
+      navigationReveal: null,
+      navigationEpoch: revealedEpoch + 1,
+      selection: null,
+      attention: {},
+      boardPreview: "",
+      recoveryNeeded: false,
+      saveError: "",
+    });
+  } finally {
+    useWorkspace.setState(previous, true);
+  }
+});
+
+it("reveals a source once when its lazy editor registers", () => {
+  const previous = useWorkspace.getState();
+  const data = createWorkspace();
+  const source = { id: "source", tool: "code" as const, revision: 0, label: "Code", excerpt: "print(1)", from: 0, to: 8 };
+  const reveal = vi.fn();
+  try {
+    useWorkspace.setState({ data, hydrated: false });
+    requestSourceReveal(source);
+    const unregister = registerAdapter("code", { focus: () => undefined, reveal });
+    expect(reveal).toHaveBeenCalledExactlyOnceWith(source);
+    unregister();
+    registerAdapter("code", { focus: () => undefined, reveal })();
+    expect(reveal).toHaveBeenCalledTimes(1);
+  } finally {
+    useWorkspace.setState(previous, true);
+  }
+});
+
+it("discards a pending source after import even when its ID and revision match", () => {
+  const previous = useWorkspace.getState();
+  const data = createWorkspace();
+  const source = { id: "source", tool: "code" as const, revision: 0, label: "Code", excerpt: "print(1)" };
+  const reveal = vi.fn();
+  try {
+    useWorkspace.setState({ data, hydrated: false });
+    requestSourceReveal(source);
+    useWorkspace.getState().replaceWorkspace({ ...data });
+    registerAdapter("code", { focus: () => undefined, reveal })();
+    expect(reveal).not.toHaveBeenCalled();
+  } finally {
+    useWorkspace.setState(previous, true);
+  }
+});
+
+it("discards a pending source after clearing the workspace", () => {
+  const previous = useWorkspace.getState();
+  const source = { id: "source", tool: "code" as const, revision: 0, label: "Code", excerpt: "print(1)" };
+  const reveal = vi.fn();
+  try {
+    useWorkspace.setState({ data: createWorkspace(), hydrated: false });
+    requestSourceReveal(source);
+    useWorkspace.getState().clearData("all");
+    registerAdapter("code", { focus: () => undefined, reveal })();
+    expect(reveal).not.toHaveBeenCalled();
+  } finally {
+    useWorkspace.setState(previous, true);
+  }
 });

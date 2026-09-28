@@ -1,22 +1,27 @@
 import { readFile } from "node:fs/promises";
 import { goToTool } from "./desk-navigation";
 import { test as base, expect, type Page } from "@playwright/test";
+import { parseOperation, type StudyEvent } from "../../src/features/ai/contracts";
+import { fixtureCheckpoint, fulfillStudyStream } from "./ai-stream-fixture";
 import type {
   ArtifactRef,
   Workspace,
 } from "../../src/features/workspace/model";
 
-type RequestBody = {
+type StartRequest = {
+  type: "start";
   context: {
     notes: { text: string; length: number; revision: number };
     code: { text: string; length: number; revision: number };
     board: { revision: number };
     sources: ArtifactRef[];
   };
-  continuation?: { contents: unknown[] };
-  toolResults?: Array<{ id: string; name: string; result: { status: string } }>;
 };
-type ReviewPlan = (request: RequestBody) => {
+type ResultRequest = {
+  type: "results";
+  results: Array<{ id: string; result: { status: string } }>;
+};
+type ReviewPlan = (request: StartRequest) => {
   text: string;
   summary: string;
   target?: "notes" | "code" | "board";
@@ -38,21 +43,22 @@ test.use({ channel: "chrome", reducedMotion: "reduce" });
 
 /** Only the HTTP boundary is replaced; the real review controller and store run. */
 async function fixtureReviews(page: Page, plans: ReviewPlan[]) {
-  const requests: RequestBody[] = [];
+  const requests: Array<StartRequest | ResultRequest> = [];
   const results: string[] = [];
   let nextPlan = 0;
   await page.route("**/api/ai", async (route) => {
-    const body = route.request().postDataJSON() as RequestBody;
+    const body = route.request().postDataJSON() as StartRequest | ResultRequest;
     requests.push(body);
-    let events: unknown[];
-    if (body.continuation) {
-      const status = body.toolResults?.[0]?.result.status ?? "missing";
+    let events: StudyEvent[];
+    if (body.type === "results") {
+      const status = body.results?.[0]?.result.status ?? "missing";
       results.push(status);
       events = [
         { type: "text", text: `Review recorded: ${status}.` },
-        { type: "done", continuation: { contents: [] } },
+        { type: "done" },
       ];
     } else {
+      expect(body.type).toBe("start");
       const plan = plans[nextPlan++];
       expect(
         plan,
@@ -89,23 +95,14 @@ async function fixtureReviews(page: Page, plans: ReviewPlan[]) {
               ],
               summary: review.summary,
             };
-      const call = { id: `review-${nextPlan}`, name: `edit_${target}`, args };
+      const operation = parseOperation(`edit_${target}`, args);
+      expect(operation).toBeDefined();
       events = [
         { type: "text", text: "I prepared a journal update for your review." },
-        { type: "call", ...call },
-        {
-          type: "done",
-          continuation: {
-            contents: [{ role: "model", parts: [{ functionCall: call }] }],
-          },
-        },
+        { type: "operationBatch", operations: [{ id: `review-${nextPlan}`, operation: operation! }], checkpoint: fixtureCheckpoint(`review-${nextPlan}`) },
       ];
     }
-    await route.fulfill({
-      status: 200,
-      contentType: "application/x-ndjson",
-      body: events.map((event) => JSON.stringify(event)).join("\n") + "\n",
-    });
+    await fulfillStudyStream(route, events);
   });
   return { requests, results };
 }
@@ -227,18 +224,24 @@ test("Apply and Reject preserve review control, and an accepted source link open
   await sourceLink.click();
   const dialog = page.getByRole("dialog", { name: "Python", exact: true });
   await expect(dialog).toBeVisible();
+  expect(await dialog.evaluate((element) => element.tagName)).toBe("DIALOG");
   await expect(dialog.locator("pre")).toHaveText(linkedSource!.excerpt);
   const close = dialog.getByRole("button", {
     name: "Close source",
     exact: true,
   });
-  const open = dialog.getByRole("button", { name: "Open Python", exact: true });
   await expect(close).toBeFocused();
-  await page.keyboard.press("Shift+Tab");
-  await expect(open).toBeFocused();
   await page.keyboard.press("Tab");
+  await expect(dialog.getByRole("button", { name: "Open Python" })).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
   await expect(close).toBeFocused();
   await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+  await expect(sourceLink).toBeFocused();
+  await sourceLink.click();
+  await expect(dialog).toBeVisible();
+  const bounds = (await dialog.boundingBox())!;
+  await page.mouse.click(bounds.x - 5, bounds.y + bounds.height / 2);
   await expect(dialog).toHaveCount(0);
   await expect(sourceLink).toBeFocused();
 });

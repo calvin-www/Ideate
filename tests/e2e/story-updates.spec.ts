@@ -2,6 +2,8 @@ import { readFile } from "node:fs/promises";
 import { goToTool } from "./desk-navigation";
 import { loadBoardExample } from "./board-fixture";
 import { test, expect, type Page } from "@playwright/test";
+import { parseOperation, type StudyEvent } from "../../src/features/ai/contracts";
+import { fixtureCheckpoint, fulfillStudyStream } from "./ai-stream-fixture";
 import type { Workspace } from "../../src/features/workspace/model";
 
 test.use({ reducedMotion: "reduce" });
@@ -55,28 +57,20 @@ async function clear(
 test("auto-apply renders math, survives reload, and clearing chat persists without deleting notes", async ({
   page,
 }) => {
-  const requests: Array<{
-    messages: Array<{ text: string }>;
-    context: any;
-    continuation?: unknown;
-  }> = [];
+  const requests: unknown[] = [];
   await page.route("**/api/ai", async (route) => {
     const body = route.request().postDataJSON();
     requests.push(body);
-    const events = body.continuation
+    const events: StudyEvent[] = body.type === "results"
       ? [
           {
             type: "text",
             text: "The cost is $O(\\log n)$.\n\n\\[\\frac{n}{2}\\]",
           },
-          { type: "done", continuation: { contents: [] } },
+          { type: "done" },
         ]
       : [
-          {
-            type: "call",
-            id: "math-notes",
-            name: "edit_notes",
-            args: {
+          { type: "operationBatch", operations: [{ id: "math-notes", operation: parseOperation("edit_notes", {
               baseRevision: body.context.notes.revision,
               replacements: [
                 {
@@ -86,14 +80,9 @@ test("auto-apply renders math, survives reload, and clearing chat persists witho
                 },
               ],
               summary: "Record the equation",
-            },
-          },
-          { type: "done", continuation: { contents: [] } },
+            })! }], checkpoint: fixtureCheckpoint("math-notes") },
         ];
-    await route.fulfill({
-      contentType: "application/x-ndjson",
-      body: events.map((event) => JSON.stringify(event)).join("\n") + "\n",
-    });
+    await fulfillStudyStream(route, events);
   });
   await navigate(page, "Journal");
   await page.getByRole("button", { name: "Toggle study partner" }).click();
