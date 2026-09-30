@@ -5,6 +5,8 @@ import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Workspace } from "../../src/features/workspace/model";
+import { parseOperation, type OperationCall, type StudyEvent } from "../../src/features/ai/contracts";
+import { fixtureCheckpoint, fulfillStudyStream } from "./ai-stream-fixture";
 
 const silencePath = join(tmpdir(), "ideate-board-navigation-silence.wav");
 const silence = Buffer.alloc(44 + 16000 * 2 * 30);
@@ -20,38 +22,42 @@ async function snapshot(page: Page): Promise<Workspace> {
   return JSON.parse(await readFile((await (await downloading).path())!, "utf8"));
 }
 
-async function startDrawing(page: Page, followup = false, beforeDrawing?: () => Promise<void>) {
+async function startDrawing(page: Page, followup = false, beforeDrawing?: () => Promise<void>, speechFails = false) {
   await page.addInitScript(() => localStorage.setItem("ideate:auto-apply-changes", "true"));
   let socket!: WebSocketRoute;
-  let request = 0, step = 0;
+  let request = 0, step = 0, boardRevision = 0;
   await page.route("**/api/voice/session", (route) => route.fulfill({ json: { token: "fixture-token" } }));
   await page.routeWebSocket("wss://api.elevenlabs.io/**", (ws) => { socket = ws; });
-  await page.route("**/api/voice/speech", (route) => route.fulfill({
-    contentType: "audio/pcm", headers: { "x-audio-sample-rate": "24000" }, body: Buffer.alloc(24000 * 2 * 8),
-  }));
+  await page.route("**/api/voice/speech", (route) => route.fulfill(speechFails
+    ? { status: 503, json: { type: "error", message: "Narration unavailable." } }
+    : { contentType: "audio/pcm", headers: { "x-audio-sample-rate": "24000" }, body: Buffer.alloc(24000 * 2 * 8) }));
   await page.route("**/api/ai", (route) => {
     const body = route.request().postDataJSON();
-    if (!body.continuation) { request++; step = 0; }
+    if (body.type === "start") { request++; step = 0; boardRevision = body.context.board.revision; }
     const laterDrawing = followup && request === 1 && step === 2;
     const drawing = step === 0 || laterDrawing;
-    const events: unknown[] = drawing ? [{ type: "call", id: `board-${request}-${step}`, name: "teach_step", args: {
-      speech: "Watch the outline grow while I explain each side of this small diagram.",
+    const operations: OperationCall[] = [];
+    if (drawing) operations.push({ id: `board-${request}-${step}`, operation: parseOperation("teach_step", {
+      text: "Watch the outline grow while I explain each side of this small diagram.",
       operation: { name: "edit_board", args: {
-        baseRevision: body.context.board.revision + (laterDrawing ? 1 : 0),
+        baseRevision: boardRevision + (laterDrawing ? 1 : 0),
         additions: [{ type: "rectangle", x: request === 1 ? 100 + (laterDrawing ? 2200 : 0) : -2000, y: 100, width: 160, height: 100 }],
         updates: [], deleteIds: [], summary: `Draw shape ${request}-${step}`,
       } },
-    } }] : [];
+    })! });
     if (followup && request === 1 && step === 1)
-      events.push({ type: "call", id: "read-first-shape", name: "read_board", args: {} });
+      operations.push({ id: "read-first-shape", operation: parseOperation("read_board", {})! });
     if (laterDrawing) {
-      const board = body.toolResults.find((result: { name: string }) => result.name === "read_board").result;
-      events.unshift({ type: "call", id: "point-to-first-shape", name: "show_attention", args: {
+      const board = body.results.find((result: { id: string }) => result.id === "read-first-shape").result;
+      operations.unshift({ id: "point-to-first-shape", operation: parseOperation("show_attention", {
         target: "board", revision: board.revision, ids: [board.elements[0].id], mode: "highlight", label: "The first outline",
-      } });
+      })! });
     }
     step++;
-    return route.fulfill({ contentType: "application/x-ndjson", body: [...events, { type: "done", continuation: { contents: [] } }].map((event) => JSON.stringify(event)).join("\n") + "\n" });
+    const events: StudyEvent[] = operations.length
+      ? [{ type: "operationBatch", operations, checkpoint: fixtureCheckpoint(`board-${request}-${step}`) }]
+      : [{ type: "done" }];
+    return fulfillStudyStream(route, events);
   });
   await page.goto("/");
   await expect(page.getByText("Saved locally", { exact: true })).toBeVisible();
@@ -75,6 +81,24 @@ test("small AI drawings use readable wide framing instead of magnifying them", a
   await expect(page.getByRole("button", { name: "Zoom out", exact: true })).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("board-wide-framing.png") });
   await page.getByRole("button", { name: "Stop", exact: true }).click();
+});
+
+test("failed narration leaves the explanation and drawing result intact", async ({ page }) => {
+  const { preview } = await startDrawing(page, false, undefined, true);
+  await expect(preview).toBeVisible();
+  await page.getByRole("button", { name: "Toggle study partner" }).click();
+  await expect(page.getByRole("complementary", { name: "AI study partner" }))
+    .toContainText("Watch the outline grow while I explain each side");
+  await expect.poll(async () => (await snapshot(page)).board.elements.length, { timeout: 20_000 }).toBe(1);
+  await expect(page.getByRole("button", { name: "Mute microphone" })).toBeVisible();
+});
+
+test("Stop audio leaves the current drawing step running", async ({ page }) => {
+  const { preview } = await startDrawing(page);
+  await expect(preview).toBeVisible();
+  await page.getByRole("button", { name: "Stop audio" }).click();
+  await expect(page.getByRole("button", { name: "Mute microphone" })).toBeVisible();
+  await expect.poll(async () => (await snapshot(page)).board.elements.length, { timeout: 20_000 }).toBe(1);
 });
 
 test("holding Space before a drawing preview starts still pans without taking over", async ({ page }) => {

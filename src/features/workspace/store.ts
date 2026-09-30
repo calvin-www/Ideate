@@ -41,6 +41,7 @@ type Store = {
   attention: AttentionState;
   clearAttention: (target?: Tool) => void;
   clearData: (scope: ClearScope) => void;
+  replaceWorkspace: (data: Workspace, notice?: string) => void;
   editorEpochs: Record<Tool, number>;
   setData: (update: (data: Workspace) => Workspace) => void;
   navigate: (view: View, options?: { reveal?: boolean; preset?: PresetId }) => void;
@@ -85,28 +86,48 @@ export const useWorkspace = create<Store>((set, get) => ({
   editorEpochs: { board: 0, code: 0, notes: 0, spreadsheet: 0 },
   clearData: (scope) => {
     const current = get();
+    if (scope === "all") {
+      current.setAutoApplyChanges(true);
+      current.replaceWorkspace(clearWorkspaceData(current.data, scope));
+      return;
+    }
     const editorEpochs = { ...current.editorEpochs };
     for (const tool of ["board", "code", "notes", "spreadsheet"] as const)
-      if (scope === "all" || scope === tool) editorEpochs[tool]++;
-    if (scope === "all") current.setAutoApplyChanges(true);
+      if (scope === tool) editorEpochs[tool]++;
     set({
       data: clearWorkspaceData(current.data, scope),
       editorEpochs,
       selection: null,
       attention: {},
-      ...(scope === "all" || scope === "board" ? { boardPreview: "" } : {}),
-      ...(scope === "all"
-        ? {
-            recoveryNeeded: false,
-            saveError: "",
-            notice: "",
-            view: "code" as const,
-            page: "code" as const,
-            visited: ["code" as const],
-            navigationPreset: "code" as const,
-            navigationEpoch: current.navigationEpoch + 1,
-          }
-        : {}),
+      ...(scope === "board" ? { boardPreview: "" } : {}),
+    });
+    void flushSave();
+  },
+  replaceWorkspace: (data, notice = "") => {
+    const current = get();
+    set({
+      data,
+      editorEpochs: {
+        board: current.editorEpochs.board + 1,
+        code: current.editorEpochs.code + 1,
+        notes: current.editorEpochs.notes + 1,
+        spreadsheet: current.editorEpochs.spreadsheet + 1,
+      },
+      view: "code",
+      page: "code",
+      visited: ["code"],
+      visibleTools: [],
+      navigationEpoch: current.navigationEpoch + 1,
+      navigationReveal: null,
+      navigationPreset: "code",
+      selection: null,
+      attention: {},
+      boardPreview: "",
+      jobId: null,
+      activity: "",
+      recoveryNeeded: false,
+      saveError: "",
+      notice,
     });
     void flushSave();
   },

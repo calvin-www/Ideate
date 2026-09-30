@@ -43,12 +43,15 @@ export function readProviderKeys(): ProviderKeys {
 export const hasVoiceKeys = (keys: ProviderKeys): boolean =>
   Boolean(keys.elevenLabsKey && keys.elevenLabsVoiceId);
 
-export function keyHeaders(keys: ProviderKeys): Record<string, string> {
-  const headers: Record<string, string> = {};
-  if (keys.gemini) headers["X-Gemini-Key"] = keys.gemini;
-  if (keys.elevenLabsKey) headers["X-ElevenLabs-Key"] = keys.elevenLabsKey;
-  if (keys.elevenLabsVoiceId) headers["X-ElevenLabs-Voice"] = keys.elevenLabsVoiceId;
-  return headers;
+export function aiHeaders(keys: ProviderKeys): Record<string, string> {
+  return keys.gemini ? { "X-Gemini-Key": keys.gemini } : {};
+}
+
+export function voiceHeaders(keys: ProviderKeys): Record<string, string> {
+  return {
+    ...(keys.elevenLabsKey ? { "X-ElevenLabs-Key": keys.elevenLabsKey } : {}),
+    ...(keys.elevenLabsVoiceId ? { "X-ElevenLabs-Voice": keys.elevenLabsVoiceId } : {}),
+  };
 }
 
 type Store = {

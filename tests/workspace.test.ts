@@ -10,7 +10,7 @@ import {
 } from "../src/features/workspace/model";
 import type { Proposal } from "../src/features/workspace/model";
 
-function proposal(baseRevision = 0): Proposal {
+function proposal(baseRevision = 0): Proposal & { target: "code" } {
   return {
     id: "op1",
     jobId: "job1",
@@ -130,6 +130,23 @@ describe("workspace edit boundaries", () => {
     const restored = validateImport(JSON.parse(JSON.stringify(data)));
     expect(restored.code.text).toBe("");
     expect(restored.runs[0].status).toBe("interrupted");
+  });
+  it("interrupts paused and working assistant messages on import", () => {
+    const data = createWorkspace();
+    data.messages = [
+      { id: "paused", role: "assistant", text: "Partial answer", status: "paused" },
+      { id: "working", role: "assistant", text: "More work", status: "working" },
+      { id: "done", role: "assistant", text: "Finished", status: "complete" },
+    ];
+
+    const restored = validateImport(JSON.parse(JSON.stringify(data)));
+
+    expect(restored.messages.map((message) => message.status)).toEqual([
+      "interrupted",
+      "interrupted",
+      "complete",
+    ]);
+    expect(restored.messages[0].text).toBe("Partial answer");
   });
   it("rejects an invalid or future workspace before replacing data", () => {
     expect(() => validateImport({ schemaVersion: 500 })).toThrow();

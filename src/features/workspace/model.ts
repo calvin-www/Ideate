@@ -8,12 +8,14 @@ import {
 
 export type Tool = "board" | "code" | "notes" | "spreadsheet";
 export type View = Tool | "desk";
+type PersistedBoardField = Exclude<keyof typeof elementSchema.shape, "id" | "type" | "isDeleted">;
 export type BoardElement = {
   id: string;
   type: string;
   isDeleted?: boolean;
-  [key: string]: unknown;
-};
+  /** Presentation-only progress; omitted by the board serialization allowlist. */
+  voiceProgress?: number;
+} & Partial<Record<PersistedBoardField, unknown>>;
 export type ArtifactRef = {
   id: string;
   tool: Tool;
@@ -42,12 +44,21 @@ export type Run = {
   error?: string;
   line?: number;
 };
+const messageStatusSchema = z.enum([
+  "working",
+  "paused",
+  "complete",
+  "failed",
+  "cancelled",
+  "interrupted",
+]);
+export type MessageStatus = z.infer<typeof messageStatusSchema>;
 export type Message = {
   id: string;
   role: "user" | "assistant";
   text: string;
   sources?: ArtifactRef[];
-  status?: string;
+  status?: MessageStatus;
 };
 export type Replacement = { from: number; to: number; text: string };
 export type BoardPatch = {
@@ -55,17 +66,25 @@ export type BoardPatch = {
   updates?: Record<string, unknown>[];
   deleteIds?: string[];
 };
-export type Proposal = {
+type ProposalBase = {
   id: string;
   jobId: string;
-  target: Tool;
   baseRevision: number;
   summary: string;
-  replacements?: Replacement[];
-  boardPatch?: BoardPatch;
   sources: ArtifactRef[];
   sourceRevisions: Partial<Record<Tool, number>>;
 };
+export type Proposal =
+  | (ProposalBase & {
+      target: "board";
+      boardPatch: BoardPatch;
+      replacements?: never;
+    })
+  | (ProposalBase & {
+      target: "code" | "notes" | "spreadsheet";
+      replacements: Replacement[];
+      boardPatch?: never;
+    });
 export type Change = {
   id: string;
   target: Tool;
@@ -153,10 +172,21 @@ export function compactWorkspace(data: Workspace): Workspace {
       references = [...important, ...(important.length === 2000 ? [] : recent)];
     }
   }
+  const retainedChanges = new Set<number>();
+  for (let index = Math.max(0, data.changes.length - 40); index < data.changes.length; index++)
+    retainedChanges.add(index);
+  const undoTargets = new Set<Tool>();
+  for (let index = data.changes.length - 1; index >= 0; index--) {
+    const change = data.changes[index];
+    if (change.undone || undoTargets.has(change.target)) continue;
+    undoTargets.add(change.target);
+    retainedChanges.add(index);
+    if (undoTargets.size === 4) break;
+  }
   return {
     ...data,
     messages: data.messages.slice(-200),
-    changes: data.changes.slice(-40),
+    changes: data.changes.filter((_, index) => retainedChanges.has(index)),
     runs: data.runs.slice(-100),
     references,
     acceptedOperations: data.acceptedOperations.slice(-1000),
@@ -441,6 +471,9 @@ const elementSchema = z
       })
       .nullable()
       .optional(),
+    fixedSegments: z.unknown().optional(),
+    startIsSpecial: z.boolean().optional(),
+    endIsSpecial: z.boolean().optional(),
   })
   .passthrough()
   .superRefine((element, ctx) => {
@@ -525,7 +558,7 @@ const workspaceSchema = z.object({
         role: z.enum(["user", "assistant"]),
         text: z.string().max(200_000),
         sources: z.array(refSchema).optional(),
-        status: z.string().optional(),
+        status: messageStatusSchema.optional(),
       }),
     )
     .max(500),
@@ -580,7 +613,9 @@ export function validateImport(value: unknown): Workspace {
     run.status === "running" ? { ...run, status: "interrupted" } : run,
   );
   data.messages = data.messages.map((m) =>
-    m.status === "working" ? { ...m, status: "interrupted" } : m,
+    m.status === "working" || m.status === "paused"
+      ? { ...m, status: "interrupted" }
+      : m,
   );
   return data;
 }

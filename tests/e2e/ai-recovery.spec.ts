@@ -1,19 +1,17 @@
 import { test, expect } from "@playwright/test";
+import type { StudyEvent } from "../../src/features/ai/contracts";
+import { fixtureCheckpoint, fulfillStudyStream } from "./ai-stream-fixture";
 
 test("a capped response pauses and Continue completes the same chat message", async ({
   page,
 }) => {
   let requests = 0;
-  const resume = {
-    token: "browser-fixture",
-    append: true,
-    contents: [{ role: "user", parts: [{ text: "Continue" }] }],
-  };
+  const checkpoint = fixtureCheckpoint("browser-fixture");
   await page.route("**/api/ai", async (route) => {
     const body = route.request().postDataJSON();
     requests++;
-    if (requests === 2) expect(body.resume).toEqual(resume);
-    const events =
+    if (requests === 2) expect(body).toMatchObject({ type: "continue", checkpoint });
+    const events: StudyEvent[] =
       requests === 1
         ? [
             { type: "text", text: "The first half. " },
@@ -22,17 +20,15 @@ test("a capped response pauses and Continue completes the same chat message", as
               type: "paused",
               message:
                 "Paused at this request's limit. Continue when you're ready.",
-              resume,
+              checkpoint,
+              append: true,
             },
           ]
         : [
             { type: "text", text: "The second half." },
-            { type: "done", continuation: { contents: [] } },
+            { type: "done" },
           ];
-    await route.fulfill({
-      contentType: "application/x-ndjson",
-      body: events.map((event) => JSON.stringify(event)).join("\n") + "\n",
-    });
+    await fulfillStudyStream(route, events);
   });
   await page.goto("/");
   await expect(page.getByText("Saved locally", { exact: true })).toBeVisible({

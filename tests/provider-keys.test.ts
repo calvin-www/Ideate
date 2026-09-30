@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   PROVIDER_KEYS_STORAGE_KEY,
+  aiHeaders,
   hasVoiceKeys,
-  keyHeaders,
   parseProviderKeys,
   readProviderKeys,
   useProviderKeys,
+  voiceHeaders,
 } from "../src/features/settings/providerKeys";
 
 const empty = { gemini: "", elevenLabsKey: "", elevenLabsVoiceId: "" };
@@ -54,10 +55,13 @@ describe("provider keys", () => {
     expect(useProviderKeys.getState().keys).toEqual(empty);
   });
 
-  it("builds headers only for present keys and reports voice readiness", () => {
-    expect(keyHeaders(empty)).toEqual({});
-    expect(keyHeaders({ gemini: "g", elevenLabsKey: "e", elevenLabsVoiceId: "v" })).toEqual({
-      "X-Gemini-Key": "g", "X-ElevenLabs-Key": "e", "X-ElevenLabs-Voice": "v",
+  it("sends only credentials for each endpoint and reports voice readiness", () => {
+    const keys = { gemini: "g", elevenLabsKey: "e", elevenLabsVoiceId: "v" };
+    expect(aiHeaders(empty)).toEqual({});
+    expect(voiceHeaders(empty)).toEqual({});
+    expect(aiHeaders(keys)).toEqual({ "X-Gemini-Key": "g" });
+    expect(voiceHeaders(keys)).toEqual({
+      "X-ElevenLabs-Key": "e", "X-ElevenLabs-Voice": "v",
     });
     expect(hasVoiceKeys(empty)).toBe(false);
     expect(hasVoiceKeys({ ...empty, elevenLabsKey: "e" })).toBe(false);

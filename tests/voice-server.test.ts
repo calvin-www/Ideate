@@ -30,6 +30,47 @@ function post(path: string, body?: unknown, signal?: AbortSignal) {
   });
 }
 
+function openSpeechRequest(signal?: AbortSignal) {
+  let controller!: ReadableStreamDefaultController<Uint8Array>;
+  const body = new ReadableStream<Uint8Array>({
+    start(streamController) {
+      controller = streamController;
+      controller.enqueue(new TextEncoder().encode('{"text":"Hello"'));
+    },
+  });
+  const request = new Request(`${origin}/api/voice/speech`, {
+    method: "POST",
+    headers: { origin, "content-type": "application/json" },
+    body,
+    duplex: "half",
+    signal,
+  } as RequestInit & { duplex: "half" });
+  return {
+    request,
+    close() {
+      try {
+        controller.close();
+      } catch {
+        // A cancelled reader has already closed the source.
+      }
+    },
+  };
+}
+
+async function settleWithin(pending: Promise<Response>): Promise<Response | "pending"> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      pending,
+      new Promise<"pending">((resolve) => {
+        timer = setTimeout(() => resolve("pending"), 250);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function deps(
   fetchImpl: typeof fetch,
   ...configArg: [VoiceServerDependencies["config"]] | []
@@ -57,10 +98,12 @@ describe("voice server boundary", () => {
     expect(session.status).toBe(503);
     expect(speech.status).toBe(503);
     expect(await session.json()).toEqual({
-      error: "Add your ElevenLabs API key and voice ID in Settings to use voice.",
+      type: "error",
+      message: "Add your ElevenLabs API key and voice ID in Settings to use voice.",
     });
     expect(await speech.json()).toEqual({
-      error: "Add your ElevenLabs API key and voice ID in Settings to use voice.",
+      type: "error",
+      message: "Add your ElevenLabs API key and voice ID in Settings to use voice.",
     });
     expect(upstream).not.toHaveBeenCalled();
   });
@@ -86,7 +129,11 @@ describe("voice server boundary", () => {
       headers: { origin, "X-ElevenLabs-Key": "has space", "X-ElevenLabs-Voice": "voice-1" },
     });
     const response = await handleVoiceSession(request, { fetch: upstream, timeoutMs: 1_000 });
-    expect(response.status).toBe(503);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      type: "error",
+      message: "The X-ElevenLabs-Key header is not a valid credential.",
+    });
     expect(upstream).not.toHaveBeenCalled();
   });
 
@@ -100,7 +147,8 @@ describe("voice server boundary", () => {
 
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({
-      error: "Add your ElevenLabs API key and voice ID in Settings to use voice.",
+      type: "error",
+      message: "Add your ElevenLabs API key and voice ID in Settings to use voice.",
     });
     expect(upstream).not.toHaveBeenCalled();
   });
@@ -131,6 +179,59 @@ describe("voice server boundary", () => {
     expect(upstream).not.toHaveBeenCalled();
   });
 
+  it("settles an incomplete speech body after client abort and leaves capacity free", async () => {
+    const abort = new AbortController();
+    const open = openSpeechRequest(abort.signal);
+    const upstream = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(new Uint8Array([0, 0])),
+    );
+    const limited = { ...deps(upstream), timeoutMs: 5, maxConcurrentSpeech: 1 };
+    const pending = handleVoiceSpeech(open.request, limited);
+    abort.abort();
+
+    const response = await settleWithin(pending);
+    open.close();
+    expect(response).not.toBe("pending");
+    expect((response as Response).status).toBe(499);
+    expect(upstream).not.toHaveBeenCalled();
+
+    const next = await handleVoiceSpeech(post("/api/voice/speech", { text: "Next" }), limited);
+    expect(next.status).toBe(200);
+    await next.body?.cancel();
+  });
+
+  it("times out an incomplete speech body before calling the provider", async () => {
+    const open = openSpeechRequest();
+    const upstream = vi.fn<typeof fetch>();
+    const pending = handleVoiceSpeech(open.request, { ...deps(upstream), timeoutMs: 5 });
+
+    const response = await settleWithin(pending);
+    open.close();
+    expect(response).not.toBe("pending");
+    expect((response as Response).status).toBe(504);
+    expect(upstream).not.toHaveBeenCalled();
+  });
+
+  it("rejects a streaming speech body that exceeds the byte limit", async () => {
+    const upstream = vi.fn<typeof fetch>();
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(24 * 1024 + 1));
+        controller.close();
+      },
+    });
+    const request = new Request(`${origin}/api/voice/speech`, {
+      method: "POST",
+      headers: { origin, "content-type": "application/json" },
+      body,
+      duplex: "half",
+    } as RequestInit & { duplex: "half" });
+
+    const response = await handleVoiceSpeech(request, deps(upstream));
+    expect(response.status).toBe(413);
+    expect(upstream).not.toHaveBeenCalled();
+  });
+
   it.each(["/api/voice/session", "/api/voice/speech"])(
     "rejects cross-origin browser requests to %s",
     async (path) => {
@@ -154,7 +255,7 @@ describe("voice server boundary", () => {
     },
   );
 
-  it("accepts the browser origin when a proxy reconstructs a canonical URL", async () => {
+  it("does not treat a forwarded Host header as origin authority", async () => {
     const upstream = vi
       .fn<typeof fetch>()
       .mockResolvedValue(Response.json({ token: "sutkn_example" }));
@@ -168,7 +269,8 @@ describe("voice server boundary", () => {
 
     const response = await handleVoiceSession(request, deps(upstream));
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(403);
+    expect(upstream).not.toHaveBeenCalled();
   });
 
   it("requests a realtime Scribe token with the server credential", async () => {
@@ -270,7 +372,7 @@ describe("voice server boundary", () => {
     );
 
     expect(first.status).toBe(200);
-    expect(second.status).toBe(429);
+    expect(second.status).toBe(503);
     expect(upstream).toHaveBeenCalledTimes(1);
     await first.body?.cancel();
   });
@@ -300,7 +402,7 @@ describe("voice server boundary", () => {
     const body = await response.text();
 
     expect(response.status).toBe(status);
-    expect(JSON.parse(body)).toEqual({ error });
+    expect(JSON.parse(body)).toEqual({ type: "error", message: error });
     expect(body).not.toContain("server-secret-key");
     expect(body).not.toContain("ElevenLabs");
   });
@@ -423,6 +525,53 @@ class FakeWebSocket {
 }
 
 describe("voice browser transport", () => {
+  it("shows the controlled speech response message", async () => {
+    installAudioBrowser();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(
+        Response.json(
+          { type: "error", message: "Voice service is busy. Try again shortly." },
+          { status: 429 },
+        ),
+      ),
+    );
+
+    await expect(
+      speak("Hello", new AbortController().signal, () => undefined),
+    ).rejects.toThrow("Voice service is busy. Try again shortly.");
+    await closeAudio();
+    vi.unstubAllGlobals();
+  });
+
+  it("shows the controlled transcription response message", async () => {
+    installAudioBrowser();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<typeof fetch>().mockResolvedValue(
+        Response.json(
+          { type: "error", message: "Add your ElevenLabs API key in Settings." },
+          { status: 503 },
+        ),
+      ),
+    );
+    const errors: string[] = [];
+
+    await expect(
+      connectMicrophone(
+        {
+          onSpeechStart: () => undefined,
+          onPartial: () => undefined,
+          onUtterance: () => undefined,
+          onError: (message) => errors.push(message),
+        },
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow("Add your ElevenLabs API key in Settings.");
+    expect(errors).toEqual(["Add your ElevenLabs API key in Settings."]);
+    vi.unstubAllGlobals();
+  });
+
   it("settles promptly on abort even when stopped sources never emit ended", async () => {
     const { sources } = installAudioBrowser();
     vi.stubGlobal(

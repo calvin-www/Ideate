@@ -229,12 +229,6 @@ export async function buildBoardPatch(
         "Move a bound arrow directly on the board, or move its connected shapes.",
       );
     for (const key of Object.keys(update)) {
-      if (
-        !["id", "text", "strokeColor", "backgroundColor", "x", "y"].includes(
-          key,
-        )
-      )
-        throw new Error("Unsupported diagram update.");
       if (key === "id") continue;
       if (key === "x" || key === "y") element[key] = position(update[key]);
       else if (key === "text") {
@@ -243,7 +237,7 @@ export async function buildBoardPatch(
             "Update the shape’s label element to change its text.",
           );
         element.text = element.originalText = textValue(update.text);
-      } else {
+      } else if (key === "strokeColor" || key === "backgroundColor") {
         if (
           typeof update[key] !== "string" ||
           update[key].length > 32 ||
@@ -251,7 +245,7 @@ export async function buildBoardPatch(
         )
           throw new Error("Invalid diagram color.");
         element[key] = update[key];
-      }
+      } else throw new Error("Unsupported diagram update.");
     }
   }
   for (const element of result)

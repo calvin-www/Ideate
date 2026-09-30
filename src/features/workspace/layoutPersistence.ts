@@ -94,19 +94,6 @@ export function readPageLayouts(): PageLayouts {
   }
 }
 
-export function savePageLayouts(pages: PageLayouts): boolean {
-  try {
-    // An empty map intentionally prevents a reset layout from being migrated again.
-    localStorage.setItem(
-      PAGE_LAYOUT_STORAGE_KEY,
-      JSON.stringify({ version: 1, pages }),
-    );
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new Error("Invalid layout object");
@@ -263,17 +250,5 @@ export function readLayoutPreference(): LayoutPreference | null {
     return parseLayoutPreference(localStorage.getItem(LAYOUT_STORAGE_KEY));
   } catch {
     return null;
-  }
-}
-export function saveLayoutPreference(
-  preference: LayoutPreference | null,
-): boolean {
-  try {
-    if (preference)
-      localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(preference));
-    else localStorage.removeItem(LAYOUT_STORAGE_KEY);
-    return true;
-  } catch {
-    return false;
   }
 }

@@ -1,6 +1,6 @@
 "use client";
 import { useId, type ReactNode } from "react";
-import { LoaderCircle, Mic, MicOff, Square } from "lucide-react";
+import { LoaderCircle, Mic, MicOff, Square, VolumeX } from "lucide-react";
 import type { useVoiceSession } from "./useVoiceSession";
 import { useWorkspace } from "../workspace/store";
 import { usePresentation } from "./presentation";
@@ -42,6 +42,16 @@ export default function VoiceControls({ voice, disabled, children }: Props) {
         </button>
       )}
       {children}
+      {voice.status === "speaking" && (
+        <button
+          className="icon-button"
+          aria-label="Stop audio"
+          title="Stop narration and keep the teaching step going"
+          onClick={voice.stopAudio}
+        >
+          <VolumeX size={17} />
+        </button>
+      )}
       <button
         className={`icon-button ${styles.stop}`}
         aria-label="Stop"

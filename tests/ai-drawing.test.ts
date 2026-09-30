@@ -7,7 +7,7 @@ describe("drawing connector geometry", () => {
   it.each([[0, 100], [100, 0], [-80, 100], [80, -100]])("accepts signed connector displacement (%s, %s)", (width, height) => {
     const args = drawing(width, height);
     expect(validateToolCall("edit_board", args)).toEqual(args);
-    expect(validateToolCall("teach_step", { speech: "Insert eleven here.", operation: { name: "edit_board", args } })).toBeDefined();
+    expect(validateToolCall("teach_step", { text: "Insert eleven here.", operation: { name: "edit_board", args } })).toBeDefined();
   });
   it("still rejects a motionless or oversized connector and zero-sized shapes", () => {
     expect(validateToolCall("edit_board", drawing(0, 0))).toBeUndefined();
@@ -17,7 +17,7 @@ describe("drawing connector geometry", () => {
 });
 
 describe("drawing text line breaks", () => {
-  // Gemini sometimes double-escapes newlines inside function-call strings, so
+  // Tool arguments can contain escaped newlines in board labels, so
   // the label arrives as the two characters backslash and n.
   const escaped = "Managed APIs\\n\\nPros: turnkey";
   const board = (addition: Record<string, unknown>) => ({ baseRevision: 4, additions: [addition], updates: [], deleteIds: [], summary: "Add a labeled node" });
@@ -32,7 +32,7 @@ describe("drawing text line breaks", () => {
   it("normalizes label updates and nested voice operations, leaving real line breaks alone", () => {
     const updated = validateToolCall("edit_board", { ...board({ type: "text", x: 0, y: 0, width: 10, height: 10 }), additions: [], updates: [{ id: "label-1", text: "one\\ntwo\nthree" }] }) as { updates: { text: string }[] };
     expect(updated.updates[0].text).toBe("one\ntwo\nthree");
-    const step = validateToolCall("teach_step", { speech: "Here is the node.", operation: { name: "edit_board", args: board({ type: "diamond", x: 0, y: 0, width: 80, height: 80, text: escaped }) } }) as { operation: { args: { additions: { text: string }[] } } };
+    const step = validateToolCall("teach_step", { text: "Here is the node.", operation: { name: "edit_board", args: board({ type: "diamond", x: 0, y: 0, width: 80, height: 80, text: escaped }) } }) as { operation: { args: { additions: { text: string }[] } } };
     expect(step.operation.args.additions[0].text).toBe("Managed APIs\n\nPros: turnkey");
   });
   it("does not touch escaped newlines in code or notes replacements", () => {

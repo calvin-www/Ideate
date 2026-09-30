@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { goToTool } from "./desk-navigation";
+import { fulfillStudyStream } from "./ai-stream-fixture";
 
 const STORAGE_KEY = "ideate:provider-keys:v1";
 const NOTE = "Exported journal line that proves this file has real content.";
@@ -15,15 +16,7 @@ test("chat asks for a key, settings enable chat, and voice appears only with Ele
     sentKeys.push(route.request().headers()["x-gemini-key"]);
     // Reply with a redacted marker: assistant text is persisted into the
     // workspace, and the workspace is what the export assertion below reads.
-    await route.fulfill({
-      status: 200,
-      contentType: "application/x-ndjson",
-      body:
-        JSON.stringify({ type: "text", text: "key-ok" }) +
-        "\n" +
-        JSON.stringify({ type: "done", continuation: { contents: [] } }) +
-        "\n",
-    });
+    await fulfillStudyStream(route, [{ type: "text", text: "key-ok" }, { type: "done" }]);
   });
   await page.goto("/");
   await expect(page.getByText("Saved locally", { exact: true })).toBeVisible({ timeout: 30_000 });

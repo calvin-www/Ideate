@@ -3,8 +3,8 @@ import { useEffect, useRef, useState } from "react";
 import type { PendingChange, VoiceHooks } from "../ai/useCollaborator";
 import { useWorkspace } from "../workspace/store";
 import { closeAudio, connectMicrophone, speak, unlockAudio } from "./transport";
-import { checkpointPresentation, clearPresentation, presentChange, usePresentation } from "./presentation";
-import { estimateSpeechDuration, playStep } from "./playback";
+import { checkpointPresentation, clearPresentation, usePresentation } from "./presentation";
+import { createNarrationQueue } from "./playback";
 import { hasVoiceKeys, useProviderKeys } from "../settings/providerKeys";
 
 type Collaborator = {
@@ -15,7 +15,7 @@ type Collaborator = {
   pending: PendingChange | null;
 };
 export type VoiceStatus = "off" | "connecting" | "listening" | "thinking" | "speaking" | "paused";
-type Delivery = { text: string; status: "heard" | "interrupted" };
+type Delivery = { id: string; text: string; status: "heard" | "interrupted" };
 
 export function useVoiceSession() {
   const [status, setStatus] = useState<VoiceStatus>("off");
@@ -30,16 +30,18 @@ export function useVoiceSession() {
   const goal = useRef("");
   const unfinishedGoal = useRef("");
   const deliveries = useRef<Delivery[]>([]);
-  const output = useRef<AbortController | null>(null);
   const workspaceId = useRef("");
   const mounted = useRef(true);
   const turn = useRef(0);
+  const narration = useRef(createNarrationQueue(() => {
+    if (mounted.current) setError("Audio could not play. The explanation is still available in text.");
+  }));
 
   function pause() {
     turn.current++;
     if (usePresentation.getState().current && goal.current) unfinishedGoal.current = goal.current;
     checkpointPresentation();
-    output.current?.abort();
+    narration.current.stop();
     collaborator.current?.cancel();
     clearPresentation();
     if (active.current && mounted.current) setStatus("paused");
@@ -65,13 +67,14 @@ export function useVoiceSession() {
       const identity = session.current, turnId = ++turn.current;
       setStatus("thinking");
       await collaborator.current.approve();
-      if (active.current && identity === session.current && turnId === turn.current && !output.current) setStatus("listening");
+      if (active.current && identity === session.current && turnId === turn.current && !narration.current.isPlaying()) setStatus("listening");
       return;
     }
     if (collaborator.current.pending && /^(reject|reject it|no|don't apply it)$/.test(command)) {
       collaborator.current.reject(); return;
     }
     pause();
+    narration.current.resume();
     const resumeGoal = unfinishedGoal.current || goal.current;
     const continuing = /^(continue|resume|keep going)$/.test(command) && resumeGoal;
     const request = continuing
@@ -82,7 +85,7 @@ export function useVoiceSession() {
     const turnId = ++turn.current;
     setStatus("thinking");
     await collaborator.current.ask(request);
-    if (active.current && identity === session.current && turnId === turn.current && !output.current) {
+    if (active.current && identity === session.current && turnId === turn.current && !narration.current.isPlaying()) {
       if (continuing && useWorkspace.getState().data.messages.at(-1)?.status === "complete") unfinishedGoal.current = "";
       setStatus("listening");
     }
@@ -130,7 +133,7 @@ export function useVoiceSession() {
         onPartial: (text) => {
           if (active.current && !muteRef.current && controller === session.current) {
             setTranscript(text);
-            if (text.trim() && output.current) actions.current.pause();
+            if (text.trim() && narration.current.isPlaying()) actions.current.pause();
           }
         },
         onUtterance: (text) => {
@@ -143,6 +146,7 @@ export function useVoiceSession() {
       }, controller.signal);
       if (controller.signal.aborted || controller !== session.current || workspaceId.current !== useWorkspace.getState().data.id) { mic.close(); return; }
       microphone.current = mic; active.current = true;
+      narration.current.resume();
       muteRef.current = false; setMuted(false);
       setStatus("listening");
     } catch (failure) {
@@ -157,43 +161,37 @@ export function useVoiceSession() {
     microphone.current?.mute(muteRef.current);
     setMuted(muteRef.current); setTranscript("");
   }
+  function stopAudio() {
+    narration.current.stop();
+    if (active.current && mounted.current)
+      setStatus(useWorkspace.getState().jobId ? "thinking" : "listening");
+  }
   const hooks: VoiceHooks = {
     enabled: () => active.current,
     context: () => ({ recentSpeech: deliveries.current.slice(-8), previousGoal: goal.current, unfinishedGoal: unfinishedGoal.current }),
     clear: clearPresentation,
-    play: async (text, signal, change, action) => {
-      if (!active.current || !session.current) throw new DOMException("Voice ended", "AbortError");
+    narrate: (id, text, signal) => {
+      if (!active.current || !session.current) return;
       const identity = session.current;
-      const controller = new AbortController();
-      output.current?.abort(); output.current = controller;
-      const isCurrent = () => identity === session.current && output.current === controller;
-      const linked = AbortSignal.any([signal, controller.signal, identity.signal]);
-      let delivery: Delivery | undefined;
-      try {
-        await playStep(text, linked, {
-          speak: (speech, audioSignal, onStart) => speak(speech, audioSignal, () => {
-            if (!isCurrent() || linked.aborted) return;
-            delivery = { text, status: "interrupted" };
+      narration.current.enqueue(id, signal, async (audioSignal) => {
+        if (identity !== session.current || !active.current) return;
+        let delivery: Delivery | undefined;
+        try {
+          await speak(text, AbortSignal.any([audioSignal, identity.signal]), () => {
+            if (identity !== session.current || audioSignal.aborted) return;
+            delivery = { id, text, status: "interrupted" };
             deliveries.current = [...deliveries.current.slice(-7), delivery];
-            setStatus("speaking"); onStart();
-          }),
-          present: change ? (visualSignal) => presentChange(change.proposal, change.preview, visualSignal, estimateSpeechDuration(text)) : action ? async () => { await action(); } : undefined,
-        });
-        if (isCurrent() && delivery) delivery.status = "heard";
-      } catch (failure) {
-        if (isCurrent()) {
-          clearPresentation(change?.proposal.jobId);
+            setStatus("speaking");
+          });
+          if (delivery && identity === session.current) delivery.status = "heard";
+        } finally {
+          if (active.current && identity === session.current && !audioSignal.aborted)
+            setStatus(useWorkspace.getState().jobId ? "thinking" : "listening");
         }
-        throw failure;
-      } finally {
-        if (output.current === controller) {
-          output.current = null;
-          if (active.current && !linked.aborted) setStatus("thinking");
-        }
-      }
+      });
     },
   };
-  return { status, muted, transcript, error, start, stop: end, toggleMute,
+  return { status, muted, transcript, error, start, stop: end, stopAudio, toggleMute,
     submit: (text: string) => active.current ? ask(text) : collaborator.current?.ask(text) ?? Promise.resolve(),
     hooks,
     bind: (value: Collaborator) => { collaborator.current = value; },

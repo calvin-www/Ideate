@@ -10,7 +10,7 @@ Use Node 22.12+ or a current supported Node release, and Chrome for browser test
 npm ci
 ```
 
-Copy `.env.example` to `.env.local`. No API keys go on the server. Open the app, click **Settings** in the header, and paste your own Gemini API key. It is stored in your browser and sent only to this site's own API, which forwards it to Google.
+Copy `.env.example` to `.env.local`. No provider API key is configured in server environment variables. Open the app, click **Settings** in the header, and paste your own Gemini API key. It is stored in your browser and sent only to this site's own API, which forwards it to Google.
 
 AI output tokens are not capped by the app; the model's own output limit is the only ceiling. Cutoffs and invalid tool calls can recover automatically up to twice per request, and each request allows up to eight tool rounds; **Continue** grants fresh attempts when the response pauses. Completed edits and partial text are preserved.
 
@@ -22,7 +22,7 @@ Open **http://localhost:3000**. The command first copies the Python runner and P
 
 For voice, also add your ElevenLabs API key and voice ID in **Settings**. Without them the microphone is hidden and the partner works as text chat. Click the header microphone button and allow microphone access. Gemini remains the study partner; ElevenLabs handles live transcription and speech. The partner speaks while whiteboard strokes or editor lines appear. The adjacent chat button opens the study partner panel; speaking does not open it automatically.
 
-Voice follows the **Auto-apply changes** preference. With review enabled, say “apply it” or use **Apply** to start a proposed step. Speak to interrupt; the visible partial function or stroke stays where it paused, saved as an undoable change. Ask your question, then say “continue” to continue the unfinished task from that work. **Mute microphone** stops transcription while the current explanation can continue. **Stop** ends speech and drawing and turns off the microphone. Pan or zoom the board during an explanation to take camera control without interrupting it. This first version paces visuals by short spoken steps; exact word timing and microphone interruption sensitivity still need real-device tuning.
+Voice follows the **Auto-apply changes** preference. With review enabled, say “apply it” or use **Apply** to start a proposed step. Speak to interrupt; the visible partial function or stroke stays where it paused, saved as an undoable change. Ask your question, then say “continue” to continue the unfinished task from that work. **Mute microphone** stops transcription while the current explanation can continue. **Stop** ends speech and drawing and turns off the microphone. Pan or zoom the board during an explanation to take camera control without interrupting it. Text and visuals advance in short teaching steps even when narration is slow, unavailable, or off; exact word timing and microphone interruption sensitivity still need real-device tuning.
 
 For an optimized local run:
 
@@ -35,7 +35,9 @@ The Python runtime ships with the npm dependency and runs in an iframe and Web W
 
 ## Deploying
 
-The Next.js app needs no secrets. Set `NEXT_PUBLIC_RUNNER_ORIGIN` to wherever the Python runner is reachable. Each visitor supplies their own Gemini (and optional ElevenLabs) key through Settings; keys never reach the server's storage or logs. Workspaces stay in each visitor's browser.
+The Python runner is served by the app at `/runner/index.html`; no runner origin setting or second deployment is needed. Each visitor supplies their own Gemini (and optional ElevenLabs) key through Settings; provider keys do not need to be configured on the server or appear in workspace exports. Workspaces stay in each visitor's browser.
+
+The deployment target is Vercel Functions, but no Redis resource, credentials, or public deployment were provisioned in this repo work. Local development without Redis keeps AI continuation checkpoints and visitor throttles in process memory, so restarts lose them. Production requires `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN` for shared, single-use checkpoints with a 30-minute expiry and shared per-visitor throttling; missing or unavailable Redis fails closed with a service error. A consumed continuation cannot be retried after a provider failure: start a new request. The process-local overload guard remains separate. A single Next.js project does not guarantee a single persistent process.
 
 ## Try the study loop
 
@@ -84,4 +86,4 @@ The Gemini check makes small live API requests and reads `GEMINI_API_KEY` from `
 
 Automated coverage includes local persistence, review and auto-apply, editor layouts, Python execution, microphone controls, board navigation during AI drawing, and text highlighting.
 
-The app deploys as a single Next.js project; `npm run build` bundles the Python runner. It is prepared for public deployment with visitor-supplied keys.
+The app builds as a single Next.js project; `npm run build` bundles the Python runner. Public deployment additionally needs the shared Redis configuration described above.

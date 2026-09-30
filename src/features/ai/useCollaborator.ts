@@ -1,13 +1,12 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { DefaultChatTransport, type UIMessageChunk } from "ai";
 import { useWorkspace } from "../workspace/store";
+import { workspaceCommands } from "../workspace/commands";
+import { presentTeachingStep, type TeachingStep } from "../workspace/teachingPresentation";
 import { adapters } from "../workspace/adapters";
-import { buildBoardPatch } from "../board/adapter";
-import { parseSheet, serializeSheet, patchSheet, evaluateSheet, type CellUpdate } from "../spreadsheet/sheet";
+import { parseSheet, serializeSheet, patchSheet, type CellUpdate } from "../spreadsheet/sheet";
 import {
-  applyProposal,
-  checkProposal,
-  replaceRanges,
   type ArtifactRef,
   type BoardElement,
   type BoardPatch,
@@ -19,11 +18,10 @@ import {
   type Tool,
   type Workspace,
 } from "../workspace/model";
-// This module contains only schemas and type-only SDK imports; it has no key,
-// provider client, or other server runtime dependency.
-import { validateToolCall } from "./server/tools";
+import { parseOperation, type Operation } from "./contracts";
 import { checkAttention, parseAttention } from "./attention";
-import { keyHeaders, useProviderKeys } from "../settings/providerKeys";
+import { aiHeaders, useProviderKeys } from "../settings/providerKeys";
+import { boardExcerpt, captureContext, makeReference, makeTextReadReference, spreadsheetExcerpt, spreadsheetSource, textExcerpt } from "./context";
 
 export type PendingChange = {
   proposal: Proposal;
@@ -32,7 +30,7 @@ export type PendingChange = {
 export type VoiceHooks = {
   enabled: () => boolean;
   context: () => Record<string, unknown>;
-  play: (speech: string, signal: AbortSignal, change?: PendingChange, action?: () => Promise<unknown>) => Promise<void>;
+  narrate: (id: string, text: string, signal: AbortSignal) => Promise<void> | void;
   clear?: (jobId?: string) => void;
 };
 type Options = {
@@ -44,10 +42,14 @@ type Options = {
   onPause?: (message: string) => void;
   request?: typeof fetch;
 };
-type Call = { id: string; name: string; args: Record<string, unknown> };
-type Continuation = { contents: unknown[]; token?: string };
-type Resume = { contents: unknown[]; token: string; append: boolean };
-type Review = PendingChange & { speech?: string; resolve: (result: unknown) => void };
+type Call = Operation & { id: string };
+type EditCall = Extract<Call, { name: "edit_code" | "edit_notes" | "edit_spreadsheet" | "edit_board" | "link_artifacts" }>;
+function isEditCall(call: Call): call is EditCall {
+  return ["edit_code", "edit_notes", "edit_spreadsheet", "edit_board", "link_artifacts"].includes(call.name);
+}
+type Checkpoint = { token: string; state: string };
+type Resume = { checkpoint: Checkpoint; append: boolean };
+type Review = PendingChange & { teaching?: Pick<TeachingStep, "id" | "text">; resolve: (result: unknown) => void };
 type Job = {
   voice: boolean;
   taught: boolean;
@@ -97,221 +99,17 @@ function endpointError(value: unknown, fallback: string): string {
   return fallback;
 }
 
-function textExcerpt(text: string, from = 0, to = text.length) {
-  const start = Math.max(0, Math.min(from, text.length));
-  const end = Math.max(start, Math.min(to, text.length, start + 20_000));
-  return {
-    text: text.slice(start, end),
-    from: start,
-    to: end,
-    length: text.length,
-    truncated: start > 0 || end < text.length,
-  };
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function boardExcerpt(elements: BoardElement[], ids?: string[]) {
-  const selected = ids ? new Set(ids) : null;
-  if (selected) {
-    for (const element of elements) {
-      const bindings = [element.startBinding, element.endBinding].filter(
-        Boolean,
-      ) as Array<{ elementId?: string }>;
-      const bound = Array.isArray(element.boundElements)
-        ? (element.boundElements as Array<{ id: string }>)
-        : [];
-      if (
-        selected.has(element.id) ||
-        bindings.some((binding) => selected.has(binding.elementId ?? "")) ||
-        bound.some((item) => selected.has(item.id))
-      ) {
-        selected.add(element.id);
-        bindings.forEach((binding) => {
-          if (binding.elementId) selected.add(binding.elementId);
-        });
-        bound.forEach((item) => selected.add(item.id));
-      }
-    }
-  }
-  const relevant = elements.filter(
-    (element) => !element.isDeleted && (!selected || selected.has(element.id)),
-  );
-  const fields = [
-    "id",
-    "type",
-    "x",
-    "y",
-    "width",
-    "height",
-    "text",
-    "strokeColor",
-    "backgroundColor",
-    "points",
-    "startBinding",
-    "endBinding",
-    "boundElements",
-    "containerId",
-  ];
-  return {
-    elements: relevant
-      .slice(0, 100)
-      .map((element) =>
-        Object.fromEntries(
-          fields
-            .filter((field) => element[field] !== undefined)
-            .map((field) => [
-              field,
-              typeof element[field] === "string"
-                ? (element[field] as string).slice(0, 1_000)
-                : element[field],
-            ]),
-        ),
-      ),
-    totalElements: relevant.length,
-    truncated: relevant.length > 100,
-  };
-}
-
-type SpreadsheetReadCell = { address: string; raw: string; format?: string; calculated: string | number };
-function spreadsheetCellSource(cells: SpreadsheetReadCell[]) {
-  return cells.map(cell => `${cell.address}: ${cell.raw} (calculated: ${cell.calculated}; format: ${cell.format ?? "general"})`).join("\n");
-}
-function spreadsheetExcerpt(text: string, fromRow = 1, toRow = 200, overview = false, afterAddress?: string) {
-  const sheet = parseSheet(text);
-  const calculated = evaluateSheet(sheet);
-  const end = overview ? 200 : Math.min(toRow, fromRow + 39);
-  const compare = (a: string, b: string) => Number(a.slice(1)) - Number(b.slice(1)) || a.localeCompare(b);
-  const all = Object.entries(sheet.cells).sort(([a], [b]) => compare(a, b));
-  const relevant = all.filter(([address]) => Number(address.slice(1)) >= fromRow && Number(address.slice(1)) <= end && (!afterAddress || compare(address, afterAddress) > 0));
-  const cells: SpreadsheetReadCell[] = [];
-  const encoder = new TextEncoder();
-  for (const [address, cell] of relevant) {
-    const next = [...cells, { address, ...cell, calculated: calculated[address] }];
-    // Include the duplicated source excerpt and JSON escaping in the UTF-8 budget.
-    const bytes = encoder.encode(JSON.stringify({ cells: next, excerpt: spreadsheetCellSource(next) })).byteLength;
-    if (cells.length && (bytes > (overview ? 16_000 : 64_000) || (overview && cells.length >= 20))) break;
-    cells.push(next[next.length - 1]);
-  }
-  const withinRangeTruncated = cells.length < relevant.length;
-  return { cells, fromRow, toRow: end, totalCells: all.length, truncated: cells.length < all.length || end < toRow,
-    ...(withinRangeTruncated && cells.length ? { nextAfterAddress: cells.at(-1)!.address } : end < toRow ? { nextRow: end + 1 } : {}) };
-}
-function spreadsheetSource(excerpt: ReturnType<typeof spreadsheetExcerpt>) {
-  return spreadsheetCellSource(excerpt.cells);
-}
-
-function makeReference(
-  data: Workspace,
-  tool: Tool,
-  selection?: Selection | null,
-): ArtifactRef {
-  const selected = selection?.tool === tool ? selection : undefined;
-  const artifact = data[tool];
-  return {
-    id: crypto.randomUUID(),
-    tool,
-    revision: selected?.revision ?? artifact.revision,
-    label: selected?.runId
-      ? "Python output"
-      : tool === "board"
-        ? "Whiteboard"
-        : tool === "code"
-          ? "Python"
-          : tool === "spreadsheet" ? "Spreadsheet" : "Notes",
-    excerpt: (
-      selected?.text ??
-      (tool === "board"
-        ? data.board.elements
-            .filter((element) => !element.isDeleted)
-            .map((element) => String(element.text ?? ""))
-            .filter(Boolean)
-            .join("\n")
-        : tool === "spreadsheet" ? spreadsheetSource(spreadsheetExcerpt(data.spreadsheet.text, 1, 200, true)) : data[tool].text)
-    ).slice(0, 2_000),
-    ...(selected?.ids ? { ids: [...selected.ids] } : {}),
-    ...(selected?.from !== undefined
-      ? { from: selected.from, to: selected.to }
-      : {}),
-    ...(selected?.runId ? { runId: selected.runId } : {}),
-  };
-}
-
-function makeTextReadReference(
-  data: Workspace,
-  tool: "code" | "notes",
-  range: ReturnType<typeof textExcerpt>,
-  run?: Run,
-): ArtifactRef {
-  return {
-    ...makeReference(data, tool, {
-      tool,
-      revision: run?.revision ?? data[tool].revision,
-      text: range.text,
-      from: range.from,
-      to: range.to,
-      ...(run ? { runId: run.id } : {}),
-    }),
-    // A read is already bounded. Save exactly what was returned, rather than
-    // replacing it with the initial 2,000-character overview excerpt.
-    excerpt: range.text,
-  };
-}
-
-function captureContext(
-  data: Workspace,
-  view: string,
-  selection: Selection | null,
-): Record<string, unknown> {
-  const relevantRuns = selection?.runId
-    ? data.runs.filter((run) => run.id === selection.runId)
-    : data.runs.slice(-2);
-  return {
-    activeTool: view,
-    spreadsheet: { id: "spreadsheet", revision: data.spreadsheet.revision, ...spreadsheetExcerpt(data.spreadsheet.text, 1, 200, true) },
-    selection: selection
-      ? { ...selection, text: selection.text.slice(0, 8_000) }
-      : null,
-    board: {
-      id: "board",
-      revision: data.board.revision,
-      ...boardExcerpt(
-        data.board.elements,
-        selection?.tool === "board" ? selection.ids : undefined,
-      ),
-    },
-    code: {
-      id: "code",
-      revision: data.code.revision,
-      ...textExcerpt(
-        data.code.text,
-        selection?.tool === "code" && !selection.runId
-          ? Math.max(0, (selection.from ?? 0) - 2_000)
-          : 0,
-      ),
-    },
-    notes: {
-      id: "notes",
-      revision: data.notes.revision,
-      ...textExcerpt(
-        data.notes.text,
-        selection?.tool === "notes"
-          ? Math.max(0, (selection.from ?? 0) - 2_000)
-          : 0,
-      ),
-    },
-    runs: relevantRuns.map((run) => ({
-      ...run,
-      code: run.code.slice(0, 8_000),
-      output: run.output.slice(0, 4_000),
-      outputTruncated: run.output.length > 4_000,
-      sourceTruncated: run.code.length > 8_000,
-    })),
-    recentChanges: data.changes.slice(-10).map((change) => ({
-      id: change.id,
-      target: change.target,
-      revision: change.resultRevision,
-      summary: change.summary.slice(0, 300),
-    })),
-  };
+function readCheckpoint(value: unknown): Checkpoint | null {
+  if (!isRecord(value)) return null;
+  if (typeof value.token !== "string" || !value.token || value.token.length > 200)
+    return null;
+  if (typeof value.state !== "string" || !value.state || value.state.length > 6 * 1024 * 1024)
+    return null;
+  return { token: value.token, state: value.state };
 }
 
 function explicitlyRequestsExecution(prompt: string): boolean {
@@ -470,23 +268,12 @@ export function createCollaborator(options: Options) {
     }
   }
 
-  async function stage(job: Job, call: Call, speech?: string): Promise<unknown> {
+  async function stage(job: Job, call: EditCall, teaching?: Pick<TeachingStep, "id" | "text">): Promise<unknown> {
     assertActive(job);
     const data = useWorkspace.getState().data;
-    const target = (
-      call.name === "link_artifacts"
-        ? call.args.target
-        : call.name.replace("edit_", "")
-    ) as Tool;
-    if (call.name === "link_artifacts" && target !== "notes")
-      return {
-        status: "unsupported",
-        message:
-          "Source links can currently be added to notes. Propose target notes to create a visible, reviewed link.",
-      };
     let linkSources: ArtifactRef[] | undefined;
     if (call.name === "link_artifacts") {
-      linkSources = (call.args.sourceIds as string[])
+      linkSources = call.args.sourceIds
         .map((id) => {
           const ref = [...job.sources, ...data.references].find(
             (item) => item.id === id,
@@ -512,7 +299,7 @@ export function createCollaborator(options: Options) {
           return undefined;
         })
         .filter((ref): ref is ArtifactRef => Boolean(ref));
-      if (linkSources.length !== (call.args.sourceIds as string[]).length)
+      if (linkSources.length !== call.args.sourceIds.length)
         return {
           status: "not_found",
           message:
@@ -526,57 +313,72 @@ export function createCollaborator(options: Options) {
       )
       .join("\n");
     try {
-      const proposal: Proposal = {
+      const common = {
         id: call.id,
         jobId: job.id,
-        target,
-        baseRevision:
-          call.name === "link_artifacts"
-            ? data[target].revision
-            : Number(call.args.baseRevision),
-        summary: String(call.args.summary),
         sources: linkSources ?? [...job.sources],
         sourceRevisions: { ...job.sourceRevisions },
-        ...(target === "board"
-          ? {
-              boardPatch: {
-                additions: call.args.additions,
-                updates: call.args.updates,
-                deleteIds: call.args.deleteIds,
-              } as BoardPatch,
-            }
-          : {
-              replacements: links
-                ? [
-                    {
-                      from: data.notes.text.length,
-                      to: data.notes.text.length,
-                      text: `\n\n### Sources\n\n${links}\n`,
-                    },
-                  ]
-                : target === "spreadsheet"
-                  ? [{ from: 0, to: data.spreadsheet.text.length, text: serializeSheet(patchSheet(parseSheet(data.spreadsheet.text), call.args.updates as CellUpdate[])) }]
-                  : (call.args.replacements as Replacement[]),
-            }),
       };
-      checkProposal(data, proposal, job.id);
-      const preview =
-        target === "board"
-          ? await buildBoardPatch(data.board.elements, proposal.boardPatch!)
-          : replaceRanges(data[target].text, proposal.replacements!);
+      let proposal: Proposal;
+      if (call.name === "edit_board") {
+        proposal = {
+          ...common,
+          target: "board",
+          baseRevision: call.args.baseRevision,
+          summary: call.args.summary,
+          boardPatch: {
+            additions: call.args.additions,
+            updates: call.args.updates,
+            deleteIds: call.args.deleteIds,
+          },
+        };
+      } else if (call.name === "edit_spreadsheet") {
+        proposal = {
+          ...common,
+          target: "spreadsheet",
+          baseRevision: call.args.baseRevision,
+          summary: call.args.summary,
+          replacements: [{
+            from: 0,
+            to: data.spreadsheet.text.length,
+            text: serializeSheet(patchSheet(parseSheet(data.spreadsheet.text), call.args.updates)),
+          }],
+        };
+      } else if (call.name === "link_artifacts") {
+        proposal = {
+          ...common,
+          target: "notes",
+          baseRevision: data.notes.revision,
+          summary: call.args.summary,
+          replacements: [{
+            from: data.notes.text.length,
+            to: data.notes.text.length,
+            text: `\n\n### Sources\n\n${links}\n`,
+          }],
+        };
+      } else {
+        proposal = {
+          ...common,
+          target: call.name === "edit_code" ? "code" : "notes",
+          baseRevision: call.args.baseRevision,
+          summary: call.args.summary,
+          replacements: call.args.replacements,
+        };
+      }
+      const { preview } = await workspaceCommands.propose(proposal);
       assertActive(job);
-      checkProposal(useWorkspace.getState().data, proposal, job.id);
+      workspaceCommands.check({ proposal, preview });
       if (useWorkspace.getState().autoApplyChanges) {
         return await new Promise((resolve) => {
-          job.review = { proposal, preview, speech, resolve };
+          job.review = { proposal, preview, teaching, resolve };
           void approve();
         });
       }
       useWorkspace.setState({
-        activity: `Review the proposed ${target === "code" ? "Python" : target} change`,
+        activity: `Review the proposed ${proposal.target === "code" ? "Python" : proposal.target} change`,
       });
       return await new Promise((resolve) => {
-        job.review = { proposal, preview, speech, resolve };
+        job.review = { proposal, preview, teaching, resolve };
         options.onPending({ proposal, preview });
       });
     } catch {
@@ -592,29 +394,30 @@ export function createCollaborator(options: Options) {
   async function executeCall(job: Job, call: Call): Promise<unknown> {
     assertActive(job);
     if (job.results.has(call.id)) return job.results.get(call.id);
-    const args = validateToolCall(call.name, call.args);
-    if (!args)
+    const parsed = parseOperation(call.name, call.args);
+    if (!parsed)
       return {
         status: "error",
         message: "The operation arguments are invalid.",
       };
-    call.args = args;
+    call = { id: call.id, ...parsed };
     if (call.name === "teach_step") {
-      const speech = String(args.speech);
-      const operation = args.operation as { name: string; args: Record<string, unknown> } | undefined;
+      const { text, operation } = call.args;
+      const nested: Call | undefined = operation ? { id: call.id, ...operation } : undefined;
       job.taught = true;
-      updateAssistant(job, (message) => ({ ...message, text: [message.text, speech].filter(Boolean).join("\n\n") }));
+      updateAssistant(job, (message) => ({ ...message, text: [message.text, text].filter(Boolean).join("\n\n") }));
       let result: unknown;
-      if (operation?.name.startsWith("edit_")) {
-        result = await stage(job, { id: call.id, ...operation }, job.voice ? speech : undefined);
-      } else if (job.voice && options.voice) {
-        let actionResult: unknown;
-        await options.voice.play(speech, job.controller.signal, undefined, operation ? async () => {
-          actionResult = await executeCall(job, { id: `${call.id}:action`, ...operation });
-        } : undefined);
+      if (nested && isEditCall(nested)) {
+        result = await stage(job, nested, { id: call.id, text });
+      } else {
+        await presentTeachingStep(
+          { id: call.id, text },
+          job.controller.signal,
+          job.voice ? options.voice?.narrate : undefined,
+        );
         assertActive(job);
-        result = operation ? actionResult : { status: "spoken" };
-      } else result = operation ? await executeCall(job, { id: `${call.id}:action`, ...operation }) : { status: "shown" };
+        result = operation ? await executeCall(job, { id: `${call.id}:action`, ...operation }) : { status: "shown" };
+      }
       assertActive(job);
       job.results.set(call.id, result);
       return result;
@@ -622,7 +425,7 @@ export function createCollaborator(options: Options) {
     const data = useWorkspace.getState().data;
     let result: unknown;
     if (call.name === "show_attention") {
-      const cue = parseAttention(args)!;
+      const cue = parseAttention(call.args)!;
       const status = checkAttention(data, cue);
       if (status) {
         result = {
@@ -652,10 +455,10 @@ export function createCollaborator(options: Options) {
         };
       }
     } else if (call.name === "clear_attention") {
-      useWorkspace.getState().clearAttention(args.target as Tool | undefined);
+      useWorkspace.getState().clearAttention(call.args.target);
       result = { status: "cleared" };
     } else if (call.name === "read_spreadsheet") {
-      const excerpt = spreadsheetExcerpt(data.spreadsheet.text, args.fromRow as number | undefined, args.toRow as number | undefined, false, args.afterAddress as string | undefined);
+      const excerpt = spreadsheetExcerpt(data.spreadsheet.text, call.args.fromRow, call.args.toRow, false, call.args.afterAddress);
       const source = rememberSource(job, "spreadsheet", data, {
         ...makeReference(data, "spreadsheet"),
         ids: excerpt.cells.map(cell => cell.address),
@@ -666,8 +469,8 @@ export function createCollaborator(options: Options) {
       const tool = call.name === "read_code" ? "code" : "notes";
       const range = textExcerpt(
         data[tool].text,
-        args.from as number | undefined,
-        args.to as number | undefined,
+        call.args.from,
+        call.args.to,
       );
       const source = rememberSource(
         job,
@@ -679,7 +482,7 @@ export function createCollaborator(options: Options) {
     } else if (call.name === "read_board") {
       const excerpt = boardExcerpt(
         data.board.elements,
-        args.ids as string[] | undefined,
+        call.args.ids,
       );
       const source = rememberSource(job, "board", data, {
         ...makeReference(data, "board"),
@@ -695,14 +498,14 @@ export function createCollaborator(options: Options) {
         source,
       };
     } else if (call.name === "read_run") {
-      const run = data.runs.find((item) => item.id === args.id);
+      const run = data.runs.find((item) => item.id === call.args.id);
       if (run) {
         const output = textExcerpt(
           run.output,
-          args.from as number | undefined,
+          call.args.from,
           Math.min(
-            Number(args.to ?? run.output.length),
-            Number(args.from ?? 0) + 8_000,
+            call.args.to ?? run.output.length,
+            (call.args.from ?? 0) + 8_000,
           ),
         );
         const source = rememberSource(
@@ -717,15 +520,12 @@ export function createCollaborator(options: Options) {
           status: "not_found",
           message: "That saved run does not exist.",
         };
-    } else if (
-      call.name.startsWith("edit_") ||
-      call.name === "link_artifacts"
-    ) {
+    } else if (isEditCall(call)) {
       if (job.voice) job.taught = true;
-      result = await stage(job, call, job.voice ? String(args.summary) : undefined);
+      result = await stage(job, call, job.voice ? { id: call.id, text: call.args.summary } : undefined);
     } else if (call.name === "run_python") {
       result = explicitlyRequestsExecution(job.prompt)
-        ? await executeRun(job, Number(args.revision))
+        ? await executeRun(job, call.args.revision)
         : {
             status: "not_authorized",
             message:
@@ -739,43 +539,66 @@ export function createCollaborator(options: Options) {
 
   async function modelRound(
     job: Job,
-    continuation?: Continuation,
+    continuation?: Checkpoint,
     toolResults?: unknown[],
     resume?: Resume,
   ) {
     assertActive(job);
     useWorkspace.setState({ activity: "Thinking through your workspace…" });
-    const response = await request("/api/ai", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...keyHeaders(useProviderKeys.getState().keys),
+    const body = resume
+      ? { type: "continue", checkpoint: resume.checkpoint }
+      : continuation
+        ? { type: "results", checkpoint: continuation, results: toolResults ?? [] }
+        : { type: "start", messages: job.messages, context: job.context };
+    const transport = new DefaultChatTransport({
+      api: "/api/ai",
+      headers: () => aiHeaders(useProviderKeys.getState().keys),
+      prepareSendMessagesRequest: () => ({ body }),
+      fetch: async (input, init) => {
+        const response = await request(input, init);
+        if (!response.ok || !response.body) return response;
+        let bytes = 0;
+        const limited = response.body.pipeThrough(new TransformStream({
+          transform(chunk: Uint8Array, output) {
+            bytes += chunk.byteLength;
+            if (bytes > 6 * 1024 * 1024)
+              throw new CollaborationError("The AI response was too large. Try a smaller step.");
+            output.enqueue(chunk);
+          },
+        }));
+        return new Response(limited, {
+          status: response.status,
+          statusText: response.statusText,
+          headers: response.headers,
+        });
       },
-      signal: job.controller.signal,
-      body: JSON.stringify({
-        messages: job.messages,
-        context: job.context,
-        ...(continuation ? { continuation, toolResults } : {}),
-        ...(resume ? { resume } : {}),
-      }),
     });
-    assertActive(job);
-    if (!response.ok) {
-      const fallback =
-        response.status === 429
-          ? "Gemini is at its request limit. Wait a moment and try again."
-          : response.status === 503
-            ? "Gemini is unavailable. Check your API key in Settings and try again."
-            : "Gemini could not finish this request. Your work is preserved; try again.";
-      const failure: unknown = await response.json().catch(() => undefined);
+    let stream: ReadableStream<UIMessageChunk>;
+    try {
+      // The transport owns SSE decoding; the persisted chat still belongs to Zustand.
+      stream = await transport.sendMessages({
+        trigger: "submit-message",
+        chatId: job.id,
+        messageId: undefined,
+        messages: [],
+        abortSignal: job.controller.signal,
+      });
+    } catch (error) {
+      if (!isRecord(error) || typeof error.statusCode !== "number") throw error;
+      const fallback = error.statusCode === 429
+        ? "Gemini is at its request limit. Wait a moment and try again."
+        : error.statusCode === 503
+          ? "Gemini is unavailable. Check your API key in Settings and try again."
+          : "Gemini could not finish this request. Your work is preserved; try again.";
+      let failure: unknown;
+      try {
+        failure = JSON.parse(String(error.responseBody));
+      } catch {
+        failure = undefined;
+      }
       throw new CollaborationError(endpointError(failure, fallback));
     }
-    if (!response.body)
-      throw new CollaborationError(
-        "The AI response was empty. Please try again.",
-      );
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
+    assertActive(job);
     const calls: Call[] = [];
     const prefix =
       useWorkspace
@@ -784,10 +607,9 @@ export function createCollaborator(options: Options) {
         ?.text ?? "";
     let displayIds = [job.assistantId];
     let roundText = "";
-    let buffer = "",
-      next: Continuation | undefined,
+    let next: Checkpoint | undefined,
       paused: { resume: Resume; message: string } | undefined,
-      bytes = 0;
+      done = false;
     const display = () => {
       assertActive(job);
       const text =
@@ -813,7 +635,7 @@ export function createCollaborator(options: Options) {
         const original = data.messages.find(
           (message) => message.id === displayIds[0],
         )!;
-        const messages = chunks.map((chunk, index) => ({
+        const messages: Message[] = chunks.map((chunk, index) => ({
           ...original,
           id: nextIds[index],
           text: chunk,
@@ -833,99 +655,83 @@ export function createCollaborator(options: Options) {
       displayIds = nextIds;
       job.assistantId = nextIds.at(-1)!;
     };
-    const consume = (line: string) => {
-      if (!line.trim()) return;
+    const consume = (event: UIMessageChunk) => {
       assertActive(job);
-      const event = JSON.parse(line) as Record<string, unknown>;
-      if (next || paused)
+      if (next || paused || done) {
+        if (event.type === "text-end" || event.type === "finish") return;
         throw new CollaborationError(
           "The AI response continued after finishing. Please try again.",
         );
-      if (event.type === "text" && typeof event.text === "string") {
-        roundText += event.text;
+      }
+      if (event.type === "start" || event.type === "text-start" || event.type === "text-end" || event.type === "finish")
+        return;
+      if (event.type === "text-delta") {
+        roundText += event.delta;
         display();
-      } else if (event.type === "replace" && typeof event.text === "string") {
-        roundText = event.text;
+      } else if (event.type === "data-replace" && isRecord(event.data) && typeof event.data.text === "string") {
+        roundText = event.data.text;
         display();
-      } else if (event.type === "status" && typeof event.message === "string") {
-        useWorkspace.setState({ activity: event.message.slice(0, 200) });
+      } else if (event.type === "data-status" && isRecord(event.data) && typeof event.data.message === "string") {
+        useWorkspace.setState({ activity: event.data.message.slice(0, 200) });
       } else if (
-        event.type === "paused" &&
-        typeof event.message === "string" &&
-        event.resume &&
-        typeof event.resume === "object" &&
-        Array.isArray((event.resume as Resume).contents) &&
-        typeof (event.resume as Resume).token === "string" &&
-        typeof (event.resume as Resume).append === "boolean"
+        event.type === "data-paused" &&
+        isRecord(event.data) &&
+        typeof event.data.message === "string" &&
+        typeof event.data.append === "boolean" &&
+        readCheckpoint(event.data.checkpoint)
       ) {
-        if (calls.length)
-          throw new CollaborationError(
-            "An unfinished operation cannot be applied.",
-          );
         paused = {
-          resume: event.resume as Resume,
-          message: event.message.slice(0, 500),
+          resume: {
+            checkpoint: readCheckpoint(event.data.checkpoint)!,
+            append: event.data.append,
+          },
+          message: event.data.message.slice(0, 500),
         };
       } else if (
-        event.type === "call" &&
-        typeof event.id === "string" &&
-        typeof event.name === "string"
+        event.type === "data-operationBatch" &&
+        isRecord(event.data) &&
+        Array.isArray(event.data.operations) &&
+        readCheckpoint(event.data.checkpoint)
       ) {
-        if (calls.length >= 12)
+        if (!event.data.operations.length || event.data.operations.length > 12)
           throw new CollaborationError(
             "Gemini requested too many operations. Try a smaller step.",
           );
-        const args = validateToolCall(event.name, event.args);
-        if (!args || calls.some((call) => call.id === event.id))
-          throw new CollaborationError(
-            "Gemini proposed an invalid operation. Please try again.",
-          );
-        calls.push({ id: event.id, name: event.name, args });
-      } else if (
-        event.type === "done" &&
-        event.continuation &&
-        Array.isArray((event.continuation as Continuation).contents)
-      )
-        next = event.continuation as Continuation;
-      else if (event.type === "error")
+        for (const value of event.data.operations) {
+          if (!isRecord(value) || typeof value.id !== "string" || !value.id || value.id.length > 200 || !isRecord(value.operation))
+            throw new CollaborationError("Gemini proposed an invalid operation. Please try again.");
+          const operation = parseOperation(String(value.operation.name), value.operation.args);
+          if (!operation || calls.some((call) => call.id === value.id))
+            throw new CollaborationError("Gemini proposed an invalid operation. Please try again.");
+          calls.push({ id: value.id, ...operation });
+        }
+        next = readCheckpoint(event.data.checkpoint)!;
+      } else if (event.type === "data-done") {
+        done = true;
+      } else if (event.type === "data-error" && isRecord(event.data))
         throw new CollaborationError(
           endpointError(
-            event,
+            { type: "error", message: event.data.message },
             "Gemini could not finish this step. Your existing work is preserved; try again.",
           ),
         );
+      else if (event.type === "error")
+        throw new CollaborationError("Gemini could not finish this step. Your existing work is preserved; try again.");
       else
         throw new CollaborationError(
           "The AI response was invalid. Please try again.",
         );
     };
     try {
-      while (true) {
-        const item = await reader.read();
-        assertActive(job);
-        if (item.done) break;
-        bytes += item.value.byteLength;
-        if (bytes > 6 * 1024 * 1024)
-          throw new CollaborationError(
-            "The AI response was too large. Try a smaller step.",
-          );
-        buffer += decoder.decode(item.value, { stream: true });
-        let newline: number;
-        while ((newline = buffer.indexOf("\n")) >= 0) {
-          consume(buffer.slice(0, newline));
-          buffer = buffer.slice(newline + 1);
-        }
-      }
-      buffer += decoder.decode();
-      consume(buffer);
-      if (!next && !paused)
+      for await (const event of stream) consume(event);
+      if (!next && !paused && !done)
         throw new CollaborationError(
           "The AI response was interrupted. Please try again.",
         );
       return { calls, continuation: next, paused };
-    } finally {
-      await reader.cancel().catch(() => undefined);
-      reader.releaseLock();
+    } catch (error) {
+      if (error instanceof CollaborationError) throw error;
+      throw new CollaborationError("The AI response was invalid. Please try again.");
     }
   }
 
@@ -975,7 +781,7 @@ export function createCollaborator(options: Options) {
       context: structuredClone({
         voiceMode: options.voice?.enabled() ?? false,
         ...(options.voice?.enabled() ? { voiceDelivery: options.voice.context() } : {}),
-        ...captureContext(initial.data, initial.view, selection),
+        ...captureContext(initial, selection),
         editPolicy: initial.autoApplyChanges ? "auto-apply" : "review",
         sources,
       }),
@@ -1035,7 +841,7 @@ export function createCollaborator(options: Options) {
   ): Promise<void> {
     try {
       await prepare?.();
-      let continuation: Continuation | undefined,
+      let continuation: Checkpoint | undefined,
         results: unknown[] | undefined;
       // The ninth exchange lets the server pause at its eight-round limit
       // after receiving the final tool results, without generating more output.
@@ -1061,9 +867,10 @@ export function createCollaborator(options: Options) {
           if (job.voice && !job.taught && options.voice) {
             const answer = useWorkspace.getState().data.messages.find((message) => message.id === job.assistantId)?.text;
             if (answer?.trim()) {
+              let index = 0;
               for (const part of spokenParts(answer)) {
                 assertActive(job);
-                if (part.trim()) await options.voice.play(part, job.controller.signal);
+                if (part.trim()) options.voice.narrate(`${job.id}:answer:${index++}`, part, job.controller.signal);
               }
             }
           }
@@ -1075,7 +882,7 @@ export function createCollaborator(options: Options) {
           assertActive(job);
           const result = await executeCall(job, call);
           assertActive(job);
-          results.push({ id: call.id, name: call.name, result });
+          results.push({ id: call.id, result });
         }
         if (round === 8)
           updateAssistant(job, (message) => ({
@@ -1158,11 +965,14 @@ export function createCollaborator(options: Options) {
     options.onPending(null);
     options.onError("");
     try {
-      const state = useWorkspace.getState();
-      checkProposal(state.data, review.proposal, state.jobId);
-      if (review.speech && options.voice) {
+      workspaceCommands.check(review);
+      if (review.teaching) {
         try {
-          await options.voice.play(review.speech, job.controller.signal, review);
+          await presentTeachingStep(
+            { ...review.teaching, change: review },
+            job.controller.signal,
+            job.voice ? options.voice?.narrate : undefined,
+          );
         } catch (error) {
           review.resolve({ status: "cancelled", message: "The teaching step was interrupted. Visible progress may have been saved; read the current workspace before continuing." });
           if (isActive(job)) {
@@ -1172,18 +982,12 @@ export function createCollaborator(options: Options) {
           return;
         }
         assertActive(job);
-        checkProposal(useWorkspace.getState().data, review.proposal, job.id);
+        workspaceCommands.check(review);
       }
       {
-        const next = applyProposal(
-          useWorkspace.getState().data,
-          review.proposal,
-          state.jobId,
-          Array.isArray(review.preview) ? review.preview : undefined,
-        );
         options.voice?.clear?.(job.id);
-        state.setData(() => next);
-        const revision = next[review.proposal.target].revision;
+        const accepted = workspaceCommands.apply(review);
+        const revision = accepted.revision;
         if (job.sourceRevisions[review.proposal.target] !== undefined)
           job.sourceRevisions[review.proposal.target] = revision;
         let run: unknown;
@@ -1191,10 +995,7 @@ export function createCollaborator(options: Options) {
           run = await executeRun(job, revision);
         assertActive(job);
         review.resolve({
-          status: "accepted",
-          target: review.proposal.target,
-          revision,
-          operationId: review.proposal.id,
+          ...accepted,
           ...(run ? { run } : {}),
         });
       }
@@ -1217,11 +1018,7 @@ export function createCollaborator(options: Options) {
     if (!job || !review || !isActive(job)) return;
     job.review = null;
     options.onPending(null);
-    review.resolve({
-      status: "rejected",
-      message:
-        "The student rejected the proposed change. No change was applied.",
-    });
+    review.resolve(workspaceCommands.reject(review));
   }
 
   function cancel(): void {
@@ -1290,7 +1087,7 @@ export function useCollaborator(
       voice: {
         enabled: () => voiceRef.current?.enabled() ?? false,
         context: () => voiceRef.current?.context() ?? {},
-        play: (...args) => voiceRef.current?.play(...args) ?? Promise.resolve(),
+        narrate: (...args) => voiceRef.current?.narrate(...args),
         clear: (jobId) => voiceRef.current?.clear?.(jobId),
       },
       runCode: () => execution.current.runCode(),

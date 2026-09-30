@@ -14,7 +14,7 @@ import type {
 } from "@excalidraw/excalidraw/types";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import { useWorkspace } from "../workspace/store";
-import { adapters } from "../workspace/adapters";
+import { adapters, registerAdapter } from "../workspace/adapters";
 import type { BoardElement } from "../workspace/model";
 import BoardAttention from "./BoardAttention";
 import BoardPresentation from "../voice/BoardPresentation";
@@ -111,7 +111,25 @@ export default function BoardEditor({ active }: { active: boolean }) {
   }
   useEffect(() => {
     if (!api) return;
-    adapters.board = {
+    const value = JSON.stringify(board.elements);
+    const missingFiles = Object.values(board.files).filter(
+      (file) => api.getFiles()[file.id]?.dataURL !== file.dataURL,
+    );
+    if (missingFiles.length)
+      api.addFiles(
+        missingFiles as unknown as Parameters<typeof api.addFiles>[0],
+      );
+    if (value !== hash.current) {
+      hash.current = value;
+      api.updateScene({
+        elements: board.elements as unknown as ExcalidrawElement[],
+        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
+      });
+    }
+  }, [board.elements, board.files, api]);
+  useEffect(() => {
+    if (!api) return;
+    return registerAdapter("board", {
       focus: () => api.refresh(),
       reveal: (ref) => {
         api.updateScene({
@@ -140,29 +158,8 @@ export default function BoardEditor({ active }: { active: boolean }) {
           reader.readAsDataURL(blob);
         });
       },
-    };
-    return () => {
-      delete adapters.board;
-    };
+    });
   }, [api]);
-  useEffect(() => {
-    if (!api) return;
-    const value = JSON.stringify(board.elements);
-    const missingFiles = Object.values(board.files).filter(
-      (file) => api.getFiles()[file.id]?.dataURL !== file.dataURL,
-    );
-    if (missingFiles.length)
-      api.addFiles(
-        missingFiles as unknown as Parameters<typeof api.addFiles>[0],
-      );
-    if (value !== hash.current) {
-      hash.current = value;
-      api.updateScene({
-        elements: board.elements as unknown as ExcalidrawElement[],
-        captureUpdate: CaptureUpdateAction.IMMEDIATELY,
-      });
-    }
-  }, [board.elements, board.files, api]);
   useEffect(() => {
     if (active) {
       requestAnimationFrame(() => {

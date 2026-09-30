@@ -2,7 +2,7 @@
 
 Ideate is a 3D study desk for understanding algorithms through drawing, Python experimentation, and explanation with an AI collaborator.
 
-**Status:** The implementation is present. See [implementation status](implementation-status.md) for delivered behavior, verification, and remaining limits. Public deployment with visitor-supplied keys is prepared but has not been performed.
+**Status:** The implementation is present. See [implementation status](implementation-status.md) for delivered behavior, verification, and remaining limits. Public deployment has not been performed; production requires shared Redis continuation storage and throttling.
 
 Ideate is a personal project. These documents are its design record; they were first written on September 12, 2026 and are updated as the product changes.
 
@@ -14,8 +14,9 @@ Ideate is a personal project. These documents are its design record; they were f
 | [Product](product.md)                             | Audience, learning workflow, scope, and product success criteria                               |
 | [Interaction design](interaction-design.md)       | Desk layout, tool interfaces, navigation, accessibility, and previews                          |
 | [Architecture](architecture.md)                   | Stack, state ownership, persistence, Python isolation, and data model                          |
+| [Review remediation status](remediation-status-2026-09-28.md) | Task outcomes and remaining conditional work for the September architecture review |
 | [AI collaboration](ai-collaboration.md)           | Gemini integration, teaching behavior, context, operations, and edit safety                    |
-| [Implementation plan](implementation-plan.md)     | Sequential solo milestones, feasibility checks, and acceptance criteria                        |
+| [Original implementation plan](implementation-plan.md) | Historical milestones, feasibility checks, and acceptance criteria; not a current feature inventory |
 | [Decisions and sources](decisions-and-sources.md) | Accepted decisions, repository findings, and documentation references                          |
 
 ## Working agreement
@@ -32,6 +33,6 @@ The latest user decisions take precedence over earlier proposals. The task-plann
 
 ## Boundaries
 
-The product and interaction documents define the experience. The architecture and AI documents describe the implemented contracts and remaining limits. The implementation plan records the accepted milestone sequence.
+The product and interaction documents define the experience. The architecture and AI documents describe the implemented contracts and remaining limits. Earlier implementation plans record decisions and milestones from their dates; use the current architecture and implementation status for delivered behavior.
 
 External documentation was first checked on September 12, 2026. Implementation uses pinned dependencies and live account checks. Verification results are recorded separately from the original acceptance criteria.

@@ -3,6 +3,7 @@ import { validateToolCall } from "../src/features/ai/server/tools";
 import { createCollaborator } from "../src/features/ai/useCollaborator";
 import { createWorkspace } from "../src/features/workspace/model";
 import { useWorkspace } from "../src/features/workspace/store";
+import { uiResponse } from "./ai-client-fixture";
 
 beforeEach(() => {
   const data = createWorkspace();
@@ -29,25 +30,18 @@ function provider(name: string, args: Record<string, unknown>) {
   const results: unknown[] = [];
   const request: typeof fetch = async (_url, init) => {
     const body = JSON.parse(String(init?.body));
-    if (body.toolResults) results.push(body.toolResults[0].result);
+    if (body.results) results.push(body.results[0].result);
     const call = { id: "cue-call", name, args };
-    const events = body.toolResults
+    const events = body.results
       ? [
           { type: "text", text: "Look at the marked part." },
-          { type: "done", continuation: { contents: [] } },
+          { type: "done" },
         ]
       : [
           { type: "call", ...call },
-          {
-            type: "done",
-            continuation: {
-              contents: [{ role: "model", parts: [{ functionCall: call }] }],
-            },
-          },
+          { type: "done" },
         ];
-    return new Response(
-      events.map((event) => JSON.stringify(event)).join("\n") + "\n",
-    );
+    return uiResponse(events);
   };
   const pending = vi.fn();
   const collaborator = createCollaborator({
@@ -189,19 +183,7 @@ it("cancellation clears cues and ignores a late provider completion", async () =
         finish = resolve;
       });
     const call = { id: "held-cue", name: "show_attention", args: codeCue };
-    return new Response(
-      [
-        { type: "call", ...call },
-        {
-          type: "done",
-          continuation: {
-            contents: [{ role: "model", parts: [{ functionCall: call }] }],
-          },
-        },
-      ]
-        .map((event) => JSON.stringify(event))
-        .join("\n") + "\n",
-    );
+    return uiResponse([{ type: "call", ...call }, { type: "done" }]);
   };
   const collaborator = createCollaborator({
     request,
@@ -213,11 +195,7 @@ it("cancellation clears cues and ignores a late provider completion", async () =
   await vi.waitFor(() => expect(round).toBe(2));
   expect(useWorkspace.getState().attention.code).toBeDefined();
   collaborator.cancel();
-  finish(
-    new Response(
-      JSON.stringify({ type: "done", continuation: { contents: [] } }) + "\n",
-    ),
-  );
+  finish(uiResponse([{ type: "done" }]));
   await asking;
   expect(useWorkspace.getState().attention).toEqual({});
   expect(useWorkspace.getState().data.messages.at(-1)?.status).toBe(

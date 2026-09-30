@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUp,
   BookOpen,
@@ -16,14 +16,13 @@ import { mathRemarkPlugins, mathRehypePlugins } from "../markdown/math";
 import { diffLines } from "diff";
 import { parseSheet, evaluateSheet, formatCell } from "../spreadsheet/sheet";
 import { useWorkspace } from "../workspace/store";
+import { workspaceCommands } from "../workspace/commands";
+import { toolTitles } from "../workspace/layoutPersistence";
 import { useProviderKeys } from "../settings/providerKeys";
 import {
-  undoChange,
-  restoreChange,
   type BoardElement,
   type Change,
   type Proposal,
-  type Tool,
 } from "../workspace/model";
 
 type Props = {
@@ -95,7 +94,7 @@ export function SpreadsheetDiff({ before, after }: { before: string; after: stri
     </table>
   </div>;
 }
-export default function ChatPanel({ collaborator, onReference }: Props) {
+function ChatPanel({ collaborator, onReference }: Props) {
   const markdownComponents = useMemo<Components>(
     () => ({
       a: ({ href, children }) =>
@@ -114,15 +113,17 @@ export default function ChatPanel({ collaborator, onReference }: Props) {
     }),
     [onReference],
   );
-  const {
-    data,
-    activity,
-    jobId,
-    selection,
-    attention,
-    autoApplyChanges,
-    setAutoApplyChanges,
-  } = useWorkspace();
+  const messages = useWorkspace((state) => state.data.messages);
+  const changes = useWorkspace((state) => state.data.changes);
+  const codeText = useWorkspace((state) => state.data.code.text);
+  const notesText = useWorkspace((state) => state.data.notes.text);
+  const spreadsheetText = useWorkspace((state) => state.data.spreadsheet.text);
+  const activity = useWorkspace((state) => state.activity);
+  const jobId = useWorkspace((state) => state.jobId);
+  const selection = useWorkspace((state) => state.selection);
+  const attention = useWorkspace((state) => state.attention);
+  const autoApplyChanges = useWorkspace((state) => state.autoApplyChanges);
+  const setAutoApplyChanges = useWorkspace((state) => state.setAutoApplyChanges);
   // Assume a key until the store has read storage. Otherwise a visitor who has
   // one sees the setup card flash on every load, and hears it announced.
   const geminiReady = useProviderKeys(
@@ -140,15 +141,15 @@ export default function ChatPanel({ collaborator, onReference }: Props) {
   useEffect(() => {
     if (
       inverse &&
-      !data.changes.some((change) => change.id === inverse.change.id)
+      !changes.some((change) => change.id === inverse.change.id)
     ) {
       setInverse(null);
       setUndoError("");
     }
-  }, [data.changes, inverse]);
+  }, [changes, inverse]);
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: "nearest", behavior: "instant" });
-  }, [data.messages, collaborator.pending, activity]);
+  }, [messages, collaborator.pending, activity]);
   const send = () => {
     if (!prompt.trim() || jobId) return;
     const text = prompt;
@@ -156,13 +157,7 @@ export default function ChatPanel({ collaborator, onReference }: Props) {
     void collaborator.ask(text);
   };
   const pending = collaborator.pending;
-  const lastChange = [...data.changes].reverse().find((c) => !c.undone);
-  const toolNames: Record<Tool, string> = {
-    board: "whiteboard",
-    code: "Python",
-    notes: "notes",
-    spreadsheet: "spreadsheet",
-  };
+  const lastChange = [...changes].reverse().find((c) => !c.undone);
   return (
     <aside className="chat-panel" aria-label="AI study partner">
       <header className="chat-heading">
@@ -194,7 +189,7 @@ export default function ChatPanel({ collaborator, onReference }: Props) {
         <button
           type="button"
           className="button quiet"
-          disabled={!data.messages.length && !jobId}
+          disabled={!messages.length && !jobId}
           onClick={() => setConfirmClear(true)}
         >
           <Trash2 size={14} /> Clear chat
@@ -248,7 +243,7 @@ export default function ChatPanel({ collaborator, onReference }: Props) {
                   });
                 }}
               >
-                <strong>Show in {toolNames[cue.target]}</strong>
+                <strong>Show in {toolTitles[cue.target]}</strong>
                 <span>{cue.label}</span>
               </button>
               <button
@@ -266,7 +261,7 @@ export default function ChatPanel({ collaborator, onReference }: Props) {
         </div>
       )}
       <div className="chat-scroll">
-        {!data.messages.length && (
+        {!messages.length && (
           <div className="chat-welcome">
             <BookOpen size={26} />
             <h2>Let’s make it click.</h2>
@@ -295,7 +290,7 @@ export default function ChatPanel({ collaborator, onReference }: Props) {
             </div>
           </div>
         )}
-        {data.messages.map((message) => (
+        {messages.map((message) => (
           <article key={message.id} className={`chat-message ${message.role}`}>
             <span className="message-author">
               {message.role === "user" ? "You" : "Study partner"}
@@ -334,17 +329,16 @@ export default function ChatPanel({ collaborator, onReference }: Props) {
             <div className="proposal-title">
               <Sparkles size={16} />
               <strong>
-                Proposed change to {toolNames[pending.proposal.target]}
+                Proposed change to {toolTitles[pending.proposal.target]}
               </strong>
             </div>
             <p>{pending.proposal.summary}</p>
             {pending.proposal.target === "spreadsheet" && typeof pending.preview === "string" ? (
-              <SpreadsheetDiff before={data.spreadsheet.text} after={pending.preview} />
+              <SpreadsheetDiff before={spreadsheetText} after={pending.preview} />
             ) : typeof pending.preview === "string" ? (
               <pre className="code-diff">
                 {diffLines(
-                  data[pending.proposal.target === "notes" ? "notes" : "code"]
-                    .text,
+                  pending.proposal.target === "notes" ? notesText : codeText,
                   pending.preview,
                 ).map((part, i) => (
                   <span
@@ -386,7 +380,7 @@ export default function ChatPanel({ collaborator, onReference }: Props) {
           <section className="change-preview">
             <strong>Review restoring an earlier version</strong>
             <p>
-              You edited this {toolNames[inverse.change.target]} after the AI
+              You edited this {toolTitles[inverse.change.target]} after the AI
               change. Restoring replaces those later edits. This restore will
               also be undoable.
             </p>
@@ -423,11 +417,7 @@ export default function ChatPanel({ collaborator, onReference }: Props) {
                 className="button primary"
                 onClick={() => {
                   try {
-                    useWorkspace
-                      .getState()
-                      .setData((d) =>
-                        restoreChange(d, inverse.change.id, inverse.revision),
-                      );
+                    workspaceCommands.restore(inverse.change.id, inverse.revision);
                     setInverse(null);
                     setUndoError("");
                   } catch (error) {
@@ -459,7 +449,7 @@ export default function ChatPanel({ collaborator, onReference }: Props) {
         )}
         {(undoError ||
           (collaborator.error &&
-            data.messages.at(-1)?.text !== collaborator.error)) && (
+            messages.at(-1)?.text !== collaborator.error)) && (
           <p className="inline-error" role="alert">
             {collaborator.error || undoError}
           </p>
@@ -474,14 +464,12 @@ export default function ChatPanel({ collaborator, onReference }: Props) {
       </div>
       {lastChange && (
         <div className="undo-strip">
-          {lastChange.target === "spreadsheet" && <button onClick={() => useWorkspace.getState().navigate("spreadsheet", { reveal: true })}>Open spreadsheet</button>}
+          {lastChange.target === "spreadsheet" && <button onClick={() => workspaceCommands.navigate("spreadsheet", { reveal: true })}>Open spreadsheet</button>}
           <button
             disabled={!!pending}
             onClick={() => {
               try {
-                useWorkspace
-                  .getState()
-                  .setData((d) => undoChange(d, lastChange.id));
+                workspaceCommands.undo(lastChange.id);
                 setUndoError("");
                 setInverse(null);
               } catch {
@@ -529,7 +517,7 @@ export default function ChatPanel({ collaborator, onReference }: Props) {
           {selection && (
             <div className="context-chip">
               <span>
-                {selection.runId ? "Python output" : toolNames[selection.tool]} ·{" "}
+                {selection.runId ? "Python output" : toolTitles[selection.tool]} ·{" "}
                 {selection.ids ? `${selection.ids.length} ${selection.tool === "spreadsheet" ? "cells" : "elements"}` : "selection"}
               </span>
               <button
@@ -584,3 +572,5 @@ export default function ChatPanel({ collaborator, onReference }: Props) {
     </aside>
   );
 }
+
+export default memo(ChatPanel);

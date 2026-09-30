@@ -1,3 +1,12 @@
+import {
+  errorResponse,
+  InvalidCredentialError,
+  isTrustedOrigin,
+  readCredential,
+  readRequestText,
+  RequestBodyTooLargeError,
+} from "../http/server";
+
 const ELEVENLABS_ORIGIN = "https://api.elevenlabs.io";
 const SCRIBE_TOKEN_URL = `${ELEVENLABS_ORIGIN}/v1/single-use-token/realtime_scribe`;
 const PCM_SAMPLE_RATE = 24_000;
@@ -31,50 +40,37 @@ type AbortLink = {
   cleanup(): void;
 };
 
-function jsonError(status: number, error: string): Response {
-  return Response.json(
-    { error },
-    { status, headers: { "cache-control": "no-store" } },
-  );
-}
-
-function isAllowedOrigin(request: Request): boolean {
-  const origin = request.headers.get("origin");
-  if (!origin || request.headers.get("sec-fetch-site") === "cross-site") {
-    return false;
-  }
-  try {
-    const browserOrigin = new URL(origin).origin;
-    const requestUrl = new URL(request.url);
-    const host = request.headers.get("host");
-    const forwardedProtocol = request.headers
-      .get("x-forwarded-proto")
-      ?.split(",", 1)[0]
-      .trim();
-    const hostOrigin = host
-      ? `${forwardedProtocol || requestUrl.protocol.slice(0, -1)}://${host}`
-      : undefined;
-    return browserOrigin === requestUrl.origin || browserOrigin === hostOrigin;
-  } catch {
-    return false;
-  }
-}
-
-const CREDENTIAL_PATTERN = /^[\x21-\x7e]{1,256}$/;
 const SETUP_MESSAGE =
   "Add your ElevenLabs API key and voice ID in Settings to use voice.";
 
 /** Visitor credentials arrive per request; the server keeps none. */
 export function requestConfig(request: Request): VoiceServerConfig | null {
-  const apiKey = request.headers.get("x-elevenlabs-key") ?? "";
-  const voiceId = request.headers.get("x-elevenlabs-voice") ?? "";
-  if (!CREDENTIAL_PATTERN.test(apiKey) || !CREDENTIAL_PATTERN.test(voiceId))
-    return null;
+  const apiKey = readCredential(request, "X-ElevenLabs-Key");
+  const voiceId = readCredential(request, "X-ElevenLabs-Voice");
+  if (!apiKey || !voiceId) return null;
   return {
     apiKey,
     voiceId,
     ttsModel: process.env.ELEVENLABS_TTS_MODEL?.trim() || "eleven_flash_v2_5",
   };
+}
+
+function configuredVoice(
+  request: Request,
+  override: VoiceServerConfig | undefined,
+  needsModel = false,
+): VoiceServerConfig | Response {
+  try {
+    const config = override ?? requestConfig(request);
+    if (!config?.apiKey || !config.voiceId || (needsModel && !config.ttsModel)) {
+      return errorResponse(503, SETUP_MESSAGE);
+    }
+    return config;
+  } catch (error) {
+    if (error instanceof InvalidCredentialError)
+      return errorResponse(400, error.message);
+    throw error;
+  }
 }
 
 function linkAbort(request: Request, timeoutMs: number): AbortLink {
@@ -98,19 +94,19 @@ function linkAbort(request: Request, timeoutMs: number): AbortLink {
 }
 
 function mappedFetchError(request: Request, link: AbortLink): Response {
-  if (request.signal.aborted) return jsonError(499, "Request cancelled.");
-  if (link.didTimeout()) return jsonError(504, "Voice provider timed out.");
-  return jsonError(502, "Voice provider request failed.");
+  if (request.signal.aborted) return errorResponse(499, "Request cancelled.");
+  if (link.didTimeout()) return errorResponse(504, "Voice provider timed out.");
+  return errorResponse(502, "Voice provider request failed.");
 }
 
 function upstreamError(response: Response): Response {
   if (response.status === 401 || response.status === 403) {
-    return jsonError(503, "Voice service credentials were rejected.");
+    return errorResponse(503, "Voice service credentials were rejected.");
   }
   if (response.status === 429) {
-    return jsonError(429, "Voice service is busy. Try again shortly.");
+    return errorResponse(429, "Voice service is busy. Try again shortly.");
   }
-  return jsonError(502, "Voice provider request failed.");
+  return errorResponse(502, "Voice provider request failed.");
 }
 
 async function readLimitedText(
@@ -139,40 +135,42 @@ async function readLimitedText(
   }
 }
 
-async function readSpeechText(request: Request): Promise<
+async function readSpeechText(request: Request, timeoutMs: number): Promise<
   | { text: string }
   | { response: Response }
 > {
   if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) {
-    return { response: jsonError(415, "Expected a JSON request.") };
-  }
-  const declared = Number(request.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared > MAX_REQUEST_BYTES) {
-    return { response: jsonError(413, "Speech text is too long.") };
+    return { response: errorResponse(415, "Expected a JSON request.") };
   }
   let raw: string;
   try {
-    raw = await readLimitedText(new Response(request.body), MAX_REQUEST_BYTES);
-  } catch {
-    return { response: jsonError(413, "Speech text is too long.") };
+    raw = await readRequestText(request, MAX_REQUEST_BYTES, timeoutMs);
+  } catch (error) {
+    if (error instanceof RequestBodyTooLargeError)
+      return { response: errorResponse(413, "Speech text is too long.") };
+    if (request.signal.aborted)
+      return { response: errorResponse(499, "Request cancelled.") };
+    if (error instanceof DOMException && error.name === "TimeoutError")
+      return { response: errorResponse(504, "Speech request timed out.") };
+    return { response: errorResponse(400, "Invalid speech request.") };
   }
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
-    return { response: jsonError(400, "Invalid speech request.") };
+    return { response: errorResponse(400, "Invalid speech request.") };
   }
   if (
     !parsed ||
     typeof parsed !== "object" ||
     typeof (parsed as { text?: unknown }).text !== "string"
   ) {
-    return { response: jsonError(400, "Invalid speech request.") };
+    return { response: errorResponse(400, "Invalid speech request.") };
   }
   const text = (parsed as { text: string }).text.trim();
-  if (!text) return { response: jsonError(400, "Invalid speech request.") };
+  if (!text) return { response: errorResponse(400, "Invalid speech request.") };
   if (text.length > MAX_SPEECH_TEXT_CHARS) {
-    return { response: jsonError(413, "Speech text is too long.") };
+    return { response: errorResponse(413, "Speech text is too long.") };
   }
   return { text };
 }
@@ -181,13 +179,11 @@ export async function handleVoiceSession(
   request: Request,
   dependencies: VoiceServerDependencies = {},
 ): Promise<Response> {
-  if (!isAllowedOrigin(request)) {
-    return jsonError(403, "Request origin is not allowed.");
+  if (!isTrustedOrigin(request)) {
+    return errorResponse(403, "Request origin is not allowed.");
   }
-  const config = dependencies.config ?? requestConfig(request);
-  if (!config || !config.apiKey || !config.voiceId) {
-    return jsonError(503, SETUP_MESSAGE);
-  }
+  const config = configuredVoice(request, dependencies.config);
+  if (config instanceof Response) return config;
   const fetchImpl = dependencies.fetch ?? fetch;
   const link = linkAbort(request, dependencies.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   try {
@@ -200,7 +196,7 @@ export async function handleVoiceSession(
     const raw = await readLimitedText(response, MAX_TOKEN_RESPONSE_BYTES);
     const payload = JSON.parse(raw) as { token?: unknown };
     if (typeof payload.token !== "string" || !payload.token) {
-      return jsonError(502, "Voice provider request failed.");
+      return errorResponse(502, "Voice provider request failed.");
     }
     return Response.json(
       { token: payload.token },
@@ -260,20 +256,18 @@ export async function handleVoiceSpeech(
   request: Request,
   dependencies: VoiceServerDependencies = {},
 ): Promise<Response> {
-  if (!isAllowedOrigin(request)) {
-    return jsonError(403, "Request origin is not allowed.");
+  if (!isTrustedOrigin(request)) {
+    return errorResponse(403, "Request origin is not allowed.");
   }
-  const config = dependencies.config ?? requestConfig(request);
-  if (!config || !config.apiKey || !config.voiceId || !config.ttsModel) {
-    return jsonError(503, SETUP_MESSAGE);
-  }
-  const input = await readSpeechText(request);
+  const config = configuredVoice(request, dependencies.config, true);
+  if (config instanceof Response) return config;
+  const input = await readSpeechText(request, dependencies.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   if ("response" in input) return input.response;
 
   const maxConcurrentSpeech =
     dependencies.maxConcurrentSpeech ?? DEFAULT_MAX_CONCURRENT_SPEECH;
   if (activeSpeechRequests >= maxConcurrentSpeech) {
-    return jsonError(429, "Too many voice requests. Try again shortly.");
+    return errorResponse(503, "Voice service is busy. Try again shortly.");
   }
   activeSpeechRequests += 1;
   let released = false;
@@ -300,7 +294,7 @@ export async function handleVoiceSpeech(
       link.cleanup();
       release();
       return response.ok
-        ? jsonError(502, "Voice provider request failed.")
+        ? errorResponse(502, "Voice provider request failed.")
         : upstreamError(response);
     }
     const maxBytes = dependencies.maxAudioBytes ?? DEFAULT_MAX_AUDIO_BYTES;
@@ -310,7 +304,7 @@ export async function handleVoiceSpeech(
       link.cleanup();
       release();
       await response.body.cancel().catch(() => undefined);
-      return jsonError(502, "Voice provider response was too large.");
+      return errorResponse(502, "Voice provider response was too large.");
     }
     return new Response(boundedAudioStream(response.body, maxBytes, link, release), {
       headers: {

@@ -783,27 +783,22 @@ svg {
   color: white;
   display: flex;
 }
-.modal-scrim {
-  position: fixed;
-  inset: 0;
-  background: #1c30275e;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 80;
-  padding: 30px;
-  backdrop-filter: blur(3px);
-}
 .source-dialog {
-  position: relative;
+  position: fixed;
+  margin: auto;
   width: 620px;
-  max-width: 100%;
+  max-width: calc(100% - 60px);
   max-height: 85vh;
   overflow: auto;
   background: #fafbf6;
   padding: 32px;
+  border: 0;
   border-radius: 12px;
   box-shadow: 0 30px 100px #12271d30;
+}
+.source-dialog::backdrop {
+  background: #1c30275e;
+  backdrop-filter: blur(3px);
 }
 .source-dialog h2 {
   font: 26px var(--font-display);

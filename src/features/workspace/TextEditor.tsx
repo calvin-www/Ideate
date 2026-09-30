@@ -7,7 +7,7 @@ import { foldedRanges, unfoldEffect } from "@codemirror/language";
 import { Decoration, EditorView, placeholder } from "@codemirror/view";
 import { EditorState, StateEffect, StateField } from "@codemirror/state";
 import { useWorkspace } from "./store";
-import { adapters } from "./adapters";
+import { registerAdapter } from "./adapters";
 import AttentionOverlay, { type AttentionRect } from "../ai/AttentionOverlay";
 import TextPresentation from "../voice/TextPresentation";
 
@@ -94,10 +94,12 @@ export default function TextEditor({
   target,
   active,
   executionLine,
+  onActivate,
 }: {
   target: "code" | "notes";
   active: boolean;
   executionLine?: number;
+  onActivate?: () => void;
 }) {
   const text = useWorkspace((s) => s.data[target].text);
   const navigationEpoch = useWorkspace((s) => s.navigationEpoch);
@@ -187,9 +189,16 @@ export default function TextEditor({
     }
   }, [cue]);
   useEffect(() => {
-    adapters[target] = {
-      focus: () => editor.current?.view?.focus(),
-      reveal: (ref) => {
+    if (!ready) return;
+    const activate = (action: () => void) => {
+      if (onActivate) {
+        onActivate();
+        requestAnimationFrame(action);
+      } else action();
+    };
+    return registerAdapter(target, {
+      focus: () => activate(() => editor.current?.view?.focus()),
+      reveal: (ref) => activate(() => {
         const view = editor.current?.view;
         if (!view) return;
         const from = Math.max(
@@ -205,12 +214,9 @@ export default function TextEditor({
           scrollIntoView: true,
         });
         view.focus();
-      },
-    };
-    return () => {
-      delete adapters[target];
-    };
-  }, [target]);
+      }),
+    });
+  }, [target, ready, onActivate]);
   useEffect(() => {
     if (active)
       requestAnimationFrame(() => {

@@ -1,6 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { goToTool } from "./desk-navigation";
 import { test, expect, type Page } from "@playwright/test";
+import { parseOperation, type StudyEvent } from "../../src/features/ai/contracts";
+import { fixtureCheckpoint, fulfillStudyStream } from "./ai-stream-fixture";
 import type { Workspace } from "../../src/features/workspace/model";
 
 test.use({ reducedMotion: "reduce" });
@@ -157,6 +159,7 @@ test("dropped images remain visible after reload and workspace import", async ({
   await expect(
     page.getByText("Workspace imported.", { exact: true }),
   ).toBeVisible();
+  await navigate(page, "Whiteboard");
   const imported = await snapshot(page);
   expect(
     imported.board.elements.find((e) => e.id === picture.id),
@@ -183,6 +186,8 @@ test("dropped images remain visible after reload and workspace import", async ({
       mimeType: "application/json",
       buffer: Buffer.from(JSON.stringify(replacement)),
     });
+  await expect(page.getByText("Workspace imported.", { exact: true })).toBeVisible();
+  await navigate(page, "Whiteboard");
   await expect
     .poll(
       async () =>
@@ -354,18 +359,14 @@ test("AI board previews include existing images and applying then undoing an edi
   let boardImage: string | undefined;
   await page.route("**/api/ai", async (route) => {
     const body = route.request().postDataJSON();
-    boardImage = body.context.boardImage;
-    const events = body.continuation
+    if (body.type === "start") boardImage = body.context.boardImage;
+    const events: StudyEvent[] = body.type === "results"
       ? [
           { type: "text", text: "Added the label." },
-          { type: "done", continuation: { contents: [] } },
+          { type: "done" },
         ]
       : [
-          {
-            type: "call",
-            id: "image-label",
-            name: "edit_board",
-            args: {
+          { type: "operationBatch", operations: [{ id: "image-label", operation: parseOperation("edit_board", {
               baseRevision: body.context.board.revision,
               summary: "Label the screenshot",
               additions: [
@@ -380,14 +381,9 @@ test("AI board previews include existing images and applying then undoing an edi
               ],
               updates: [],
               deleteIds: [],
-            },
-          },
-          { type: "done", continuation: { contents: [] } },
+            })! }], checkpoint: fixtureCheckpoint("image-label") },
         ];
-    await route.fulfill({
-      contentType: "application/x-ndjson",
-      body: events.map((event) => JSON.stringify(event)).join("\n") + "\n",
-    });
+    await fulfillStudyStream(route, events);
   });
   await openBoard(page);
   await insertImage(page);

@@ -1,5 +1,7 @@
-import { GoogleGenAI, FunctionCallingConfigMode } from "@google/genai";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { generateText, streamText, tool } from "ai";
 import { deflateSync } from "node:zlib";
+import { z } from "zod";
 
 // Tiny deterministic visual fixture: a blue square followed by an orange circle.
 // No external image, credential, or workspace content is used by this check.
@@ -48,7 +50,9 @@ function fixturePng() {
 }
 
 function safeFailure(error) {
-  const status = typeof error?.status === "number" ? error.status : null;
+  const status = typeof error?.statusCode === "number"
+    ? error.statusCode
+    : typeof error?.status === "number" ? error.status : null;
   return {
     ok: false,
     status,
@@ -76,11 +80,12 @@ async function main() {
     return;
   }
   const model = process.env.GEMINI_MODEL || "gemini-3.8-flash";
-  const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const google = createGoogleGenerativeAI({ apiKey: process.env.GEMINI_API_KEY });
   const config = () => ({
+    model: google(model),
     maxOutputTokens: 2_048,
-    thinkingConfig: { includeThoughts: false },
-    httpOptions: { timeout: 40_000 },
+    maxRetries: 0,
+    timeout: 40_000,
     abortSignal: AbortSignal.timeout(45_000),
   });
   let passed = true;
@@ -110,52 +115,48 @@ async function main() {
     }
   }
   await check("streamed_text", async () => {
-    const stream = await client.models.generateContentStream({
-      model,
-      contents:
-        "In at most 35 words, explain why binary search assumes sorted input.",
-      config: config(),
+    const response = streamText({
+      ...config(),
+      prompt: "In at most 35 words, explain why binary search assumes sorted input.",
     });
     let answer = "",
       chunks = 0,
       finishReason;
-    for await (const item of stream) {
-      finishReason = item.candidates?.[0]?.finishReason || finishReason;
-      for (const part of item.candidates?.[0]?.content?.parts ?? [])
-        if (part.text && !part.thought) {
-          answer += part.text;
-          chunks++;
-        }
+    for await (const part of response.fullStream) {
+      if (part.type === "finish-step") finishReason = part.finishReason;
+      if (part.type === "text-delta") {
+        answer += part.text;
+        chunks++;
+      }
     }
     return {
-      ok: answer.length > 0 && finishReason === "STOP",
+      ok: answer.length > 0 && finishReason === "stop",
       chunks,
       finishReason,
       answer: answer.slice(0, 600),
     };
   });
   await check("image_understanding", async () => {
-    const response = await client.models.generateContent({
-      model,
-      contents: [
+    const response = await generateText({
+      ...config(),
+      messages: [
         {
           role: "user",
-          parts: [
+          content: [
             {
-              inlineData: {
-                mimeType: "image/png",
-                data: fixturePng().toString("base64"),
-              },
+              type: "image",
+              image: fixturePng(),
+              mediaType: "image/png",
             },
             {
+              type: "text",
               text: "Name the two shapes and their colors from left to right. One short sentence.",
             },
           ],
         },
       ],
-      config: config(),
     });
-    const answer = response.text || "";
+    const answer = response.text;
     return {
       ok:
         /blue/i.test(answer) &&
@@ -166,88 +167,60 @@ async function main() {
     };
   });
   await check("function_call_and_continuation", async () => {
-    const contents = [
+    const messages = [
       {
         role: "user",
-        parts: [
-          {
-            text: "Read my code using read_code. Then say which exact code revision you received, in one sentence. Do not execute it.",
-          },
-        ],
+        content: "Read my code using read_code. Then say which exact code revision you received, in one sentence. Do not execute it.",
       },
     ];
-    const tool = {
-      functionDeclarations: [
-        {
-          name: "read_code",
-          description: "Read Python text and its revision.",
-          parametersJsonSchema: {
-            type: "object",
-            properties: {},
-            additionalProperties: false,
-          },
-        },
-      ],
+    const tools = {
+      read_code: tool({
+        description: "Read Python text and its revision.",
+        inputSchema: z.strictObject({}),
+      }),
     };
-    const response = await client.models.generateContent({
-      model,
-      contents,
-      config: {
-        ...config(),
-        tools: [tool],
-        toolConfig: {
-          functionCallingConfig: {
-            mode: FunctionCallingConfigMode.ANY,
-            allowedFunctionNames: ["read_code"],
-          },
-        },
-      },
+    const response = await generateText({
+      ...config(),
+      messages,
+      tools,
+      toolChoice: { type: "tool", toolName: "read_code" },
     });
-    const content = response.candidates?.[0]?.content;
-    const call = content?.parts?.find(
-      (part) => part.functionCall,
-    )?.functionCall;
-    if (!content || call?.name !== "read_code")
+    const call = response.toolCalls.find((part) => part.toolName === "read_code");
+    if (!call)
       return { ok: false, reason: "expected_function_call_missing" };
-    const continued = await client.models.generateContent({
-      model,
-      contents: [
-        ...contents,
-        content,
+    const signed = JSON.stringify(response.response.messages).includes("thoughtSignature");
+    const continued = await generateText({
+      ...config(),
+      messages: [
+        ...messages,
+        ...response.response.messages,
         {
-          role: "user",
-          parts: [
+          role: "tool",
+          content: [
             {
-              functionResponse: {
-                ...(call.id ? { id: call.id } : {}),
-                name: call.name,
-                response: {
-                  output: {
-                    id: "code",
-                    revision: 7,
-                    text: "def midpoint(low, high):\n    return (low + high) // 2\n",
-                  },
+              type: "tool-result",
+              toolCallId: call.toolCallId,
+              toolName: call.toolName,
+              output: {
+                type: "json",
+                value: {
+                  id: "code",
+                  revision: 7,
+                  text: "def midpoint(low, high):\n    return (low + high) // 2\n",
                 },
               },
             },
           ],
         },
       ],
-      config: {
-        ...config(),
-        tools: [tool],
-        toolConfig: {
-          functionCallingConfig: { mode: FunctionCallingConfigMode.NONE },
-        },
-      },
+      tools,
+      toolChoice: "none",
     });
-    const answer = continued.text || "";
+    const answer = continued.text;
     return {
       ok: /7/.test(answer),
-      function: call.name,
-      preservedThoughtSignature: content.parts.some((part) =>
-        Boolean(part.thoughtSignature),
-      ),
+      function: call.toolName,
+      preservedThoughtSignature: signed,
       answer: answer.slice(0, 300),
     };
   });

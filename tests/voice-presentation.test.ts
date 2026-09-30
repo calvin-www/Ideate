@@ -12,7 +12,7 @@ beforeEach(() => {
 });
 afterEach(() => { clearPresentation(); vi.unstubAllGlobals(); });
 
-function proposal(jobId = "voice-job"): Proposal {
+function proposal(jobId = "voice-job"): Proposal & { target: "code" } {
   return { id: jobId, jobId, target: "code", baseRevision: 0, summary: "Write a line", sources: [], sourceRevisions: {}, replacements: [{ from: 0, to: 0, text: "low = 0\n" }] };
 }
 

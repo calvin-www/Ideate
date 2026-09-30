@@ -2,6 +2,8 @@ import { readFile } from "node:fs/promises";
 import { arrange, goToTool } from "./desk-navigation";
 import { loadBoardExample } from "./board-fixture";
 import { test, expect, type Page } from "@playwright/test";
+import { parseOperation, type StudyEvent } from "../../src/features/ai/contracts";
+import { fixtureCheckpoint, fulfillStudyStream } from "./ai-stream-fixture";
 import type { Workspace } from "../../src/features/workspace/model";
 
 type Context = {
@@ -15,43 +17,28 @@ async function fixture(
 ) {
   const results: { status: string; visible: boolean }[] = [];
   await page.route("**/api/ai", async (route) => {
-    const body = route.request().postDataJSON();
-    if (body.toolResults)
+    const body = route.request().postDataJSON() as { type: "start" | "results"; context?: Context; results?: Array<{ result: (typeof results)[number] }> };
+    if (body.type === "results")
       results.push(
-        ...body.toolResults.map(
+        ...(body.results ?? []).map(
           (r: { result: (typeof results)[number] }) => r.result,
         ),
       );
-    const calls = body.toolResults
+    const calls = body.type === "results"
       ? []
-      : cues(body.context).map((args, i) => ({
+      : cues(body.context!).map((args, i) => ({
           id: `cue-${i}`,
-          name: "show_attention",
-          args,
+          operation: parseOperation("show_attention", args)!,
         }));
-    const events = calls.length
+    const events: StudyEvent[] = calls.length
       ? [
-          ...calls.map((call) => ({ type: "call", ...call })),
-          {
-            type: "done",
-            continuation: {
-              contents: [
-                {
-                  role: "model",
-                  parts: calls.map((functionCall) => ({ functionCall })),
-                },
-              ],
-            },
-          },
+          { type: "operationBatch", operations: calls, checkpoint: fixtureCheckpoint("attention") },
         ]
       : [
           { type: "text", text: "Look at the marked idea." },
-          { type: "done", continuation: { contents: [] } },
+          { type: "done" },
         ];
-    await route.fulfill({
-      contentType: "application/x-ndjson",
-      body: events.map((event) => JSON.stringify(event)).join("\n") + "\n",
-    });
+    await fulfillStudyStream(route, events);
   });
   return results;
 }
@@ -380,6 +367,7 @@ test("whiteboard cues follow zoom and pan without editing the drawing", async ({
   ]);
   await open(page, "Whiteboard");
   await loadBoardExample(page);
+  await navigate(page, "Whiteboard");
   const before = await snapshot(page);
   await ask(page);
   await expect(page.locator('[data-attention-target="board"] [data-attention-box]')).toHaveCount(2);
